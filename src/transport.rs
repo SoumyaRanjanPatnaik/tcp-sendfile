@@ -1,6 +1,7 @@
 //! Transport layer for the custom file transfer protocol.
 
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
 use thiserror::Error;
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -12,6 +13,11 @@ pub enum TransportError {
     Serialization(#[from] postcard::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+pub struct SerializedMessage {
+    pub length: usize,
+    pub payload: &'static [u8],
 }
 
 /// Represents a message in the custom file transfer protocol.
@@ -78,8 +84,9 @@ pub enum TransportMessageV1<'a> {
 
 impl<'a> TransportMessageV1<'a> {
     /// Serializes the message into a byte vector using postcard.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, TransportError> {
-        Ok(postcard::to_allocvec(self)?)
+    pub fn to_bytes<'b>(&self, buffer: &'b mut [u8]) -> Result<&'b mut [u8], TransportError> {
+        let message = postcard::to_slice(&self, buffer)?;
+        Ok(message)
     }
 
     /// Deserializes a message from a byte slice using postcard.
@@ -102,7 +109,8 @@ mod tests {
             block_size: MAX_BLOCK_SIZE,
         };
 
-        let serialized = msg.to_bytes().expect("Failed to serialize");
+        let mut buffer = [0u8; MAX_BLOCK_SIZE as usize]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
 
         assert_eq!(msg, decoded);
@@ -117,7 +125,8 @@ mod tests {
             data: &data_payload,
         };
 
-        let serialized = msg.to_bytes().expect("Failed to serialize");
+        let mut buffer = [0u8; MAX_BLOCK_SIZE as usize]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
 
         assert_eq!(msg, decoded);
