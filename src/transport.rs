@@ -1,7 +1,6 @@
 //! Transport layer for the custom file transfer protocol.
 
 use serde::{Deserialize, Serialize};
-use std::cell::Cell;
 use thiserror::Error;
 
 pub const PROTOCOL_VERSION: u8 = 1;
@@ -109,7 +108,7 @@ mod tests {
             block_size: MAX_BLOCK_SIZE,
         };
 
-        let mut buffer = [0u8; MAX_BLOCK_SIZE as usize]; // Large enough buffer for serialization
+        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
 
@@ -118,14 +117,78 @@ mod tests {
 
     #[test]
     fn test_data_serde() {
-        let data_payload = vec![1, 2, 3, 4, 5];
+        let data_payload = [1, 2, 3, 4, 5];
         let msg = TransportMessageV1::Data {
             seq: 10,
             checksum: 0xDEADBEEF,
             data: &data_payload,
         };
 
-        let mut buffer = [0u8; MAX_BLOCK_SIZE as usize]; // Large enough buffer for serialization
+        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_error_serde() {
+        let msg = TransportMessageV1::Error {
+            code: 404,
+            message: "File not found".to_string(),
+        };
+
+        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_progress_request_serde() {
+        let msg = TransportMessageV1::ProgressRequest;
+
+        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_progress_response_serde() {
+        let msg = TransportMessageV1::ProgressResponse {
+            bytes_received: 512 * 1024,
+        };
+        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize ");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_request_serde() {
+        let msg = TransportMessageV1::Request { seq: 42 };
+        let mut buffer = [0u8; 1024]; // Large enough buffer for
+                                      // serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_large_data_serde() {
+        let data_payload = vec![0xFF; MAX_BLOCK_SIZE as usize];
+        let msg = TransportMessageV1::Data {
+            seq: 100,
+            checksum: 0xBEEFDEAD,
+            data: &data_payload,
+        };
+
+        let mut buffer = vec![0u8; (MAX_BLOCK_SIZE + 512) as usize]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = TransportMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
 
