@@ -4,9 +4,11 @@ use std::{
 };
 
 use crate::transport::{
-    TransportMessageV1, CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE,
-    MESSAGE_DELIMITER, VERSION_HEADER_PRIFIX,
+    CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE, MESSAGE_DELIMITER,
+    VERSION_HEADER_PRIFIX,
 };
+use log::debug;
+use serde::Deserialize;
 
 #[derive(thiserror::Error, Debug)]
 pub enum StreamReadError {
@@ -23,7 +25,7 @@ pub enum StreamReadError {
     UnsupportedProtocolVersion { found: u8, expected: u8 },
 
     #[error("Failed to parse message payload: {0}")]
-    PayloadParseError(#[from] crate::transport::TransportError),
+    PayloadParseError(#[from] postcard::Error),
 }
 
 /// Result of reading a message from the stream
@@ -36,8 +38,8 @@ pub enum StreamReadError {
 ///
 /// `next_payload_index` will be `None` if there is no extra data in the buffer after the current message.
 #[derive(Debug)]
-pub struct ReadPayloadResult<'a> {
-    pub message: TransportMessageV1<'a>,
+pub struct ReadPayloadResult<T> {
+    pub message: T,
     pub total_bytes_read: usize,
     pub next_payload_index: Option<usize>,
 }
@@ -63,11 +65,14 @@ pub struct ReadPayloadResult<'a> {
 /// - cStreamReadError::BufferSmallerThanExpectedc: If the provided buffer is smaller than the expected message length
 /// - [StreamReadError::InvalidMessageFormat]: If the message does not start with the expected headers or version information
 /// - [StreamReadError::Io]: For any I/O errors that occur during reading from the stream
-pub fn read_next_payload<'a, S: io::Read>(
+pub fn read_next_payload<'a, T, S: io::Read>(
     stream: &mut S,
     buffer: &'a mut [u8],
     filled_len: usize,
-) -> Result<ReadPayloadResult<'a>, StreamReadError> {
+) -> Result<ReadPayloadResult<T>, StreamReadError>
+where
+    T: Deserialize<'a>,
+{
     let mut total_bytes_read = filled_len; // Total bytes read from stream
 
     // Extract header bytes
@@ -80,16 +85,19 @@ pub fn read_next_payload<'a, S: io::Read>(
 
         let curr_bytes_read = stream.read(&mut buffer[total_bytes_read..])?;
         let previous_total = total_bytes_read;
-        let total_bytes_read = previous_total + curr_bytes_read;
+        total_bytes_read = previous_total + curr_bytes_read;
 
         // Check if the header delimiter is present in the newly read bytes
-        let header_end_index_opt = buffer[previous_total..total_bytes_read]
+        let test_crlf_from_idx = previous_total
+            .checked_sub(2 * MESSAGE_DELIMITER.len() - 1)
+            .unwrap_or(0);
+        let header_end_index_opt = buffer[test_crlf_from_idx..total_bytes_read]
             .windows(2 * MESSAGE_DELIMITER.len())
             .position(|window| window == [MESSAGE_DELIMITER, MESSAGE_DELIMITER].concat())
-            .map(|index| index + previous_total);
+            .map(|index| index + test_crlf_from_idx); // Adjust index to account for the offset
 
         if let Some(header_end) = header_end_index_opt {
-            break &buffer[..header_end];
+            break &buffer[..header_end]; // We have the full header, break with the header slice
         }
     };
 
@@ -117,7 +125,7 @@ pub fn read_next_payload<'a, S: io::Read>(
     }
 
     let payload_bytes = &buffer[payload_start_index..expected_total_length];
-    let message = TransportMessageV1::from_bytes(payload_bytes)?;
+    let message: T = postcard::from_bytes(payload_bytes)?;
     let next_payload_index = if total_bytes_read > expected_total_length {
         Some(expected_total_length)
     } else {
@@ -183,7 +191,49 @@ fn parse_header_line<ParsedValue: FromStr>(
 
 #[cfg(test)]
 mod tests {
+    use std::io::{PipeReader, Write};
+
     use super::*;
+    use serde::Serialize;
+
+    /// Create a test struct to reduce the complexity of sending
+    /// an actual message, while capturing the full flow of reading a message from the stream and parsing it.
+    #[derive(Deserialize, Serialize, Debug, PartialEq)]
+    struct MockMessage {
+        field1: String,
+        field2: u32,
+    }
+
+    impl MockMessage {
+        fn new_dummy_message() -> Self {
+            MockMessage {
+                field1: "Test".to_string(),
+                field2: 42,
+            }
+        }
+
+        fn get_message_bytes<'a>(&self) -> Vec<u8> {
+            let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
+            let payload_bytes =
+                postcard::to_slice(self, &mut buffer).expect("Failed to serialize MockMessage");
+
+            let version_header = format!("Ver: {}\r\n", CURRENT_PROTOCOL_VERSION);
+            let length_header = format!("Len: {}\r\n", payload_bytes.len());
+            let full_message = [
+                version_header.as_bytes(),
+                length_header.as_bytes(),
+                b"\r\n",
+                payload_bytes,
+            ]
+            .concat();
+            let full_message_chars = full_message
+                .iter()
+                .map(|byte| *byte as char)
+                .collect::<Vec<_>>();
+            println!("Full message bytes: {:?}", full_message_chars);
+            full_message.to_owned()
+        }
+    }
 
     #[test]
     fn test_parse_all_headers_valid() {
@@ -210,5 +260,59 @@ mod tests {
             }
             _ => panic!("Expected InvalidMessageFormat error"),
         }
+    }
+
+    #[test]
+    fn test_read_next_payload_valid() {
+        use std::io::Cursor;
+
+        let message = MockMessage {
+            field1: "Hello".to_string(),
+            field2: 123,
+        };
+
+        let mut buffer = vec![0; 1024];
+        let payload_bytes =
+            postcard::to_slice(&message, &mut buffer).expect("Failed to serialize test message");
+
+        let full_message = [
+            format!("Ver: {}\r\n", CURRENT_PROTOCOL_VERSION).as_bytes(),
+            format!("Len: {}\r\n", payload_bytes.len()).as_bytes(),
+            b"\r\n",
+            payload_bytes,
+        ]
+        .concat();
+
+        let mut cursor = Cursor::new(&full_message);
+        let result = read_next_payload::<MockMessage, _>(&mut cursor, &mut buffer, 0)
+            .expect("Failed to read valid payload");
+        assert_eq!(result.message, message);
+    }
+
+    #[test]
+    fn test_read_next_payload_slow_writer() {
+        // This test simulates a slow writer by writing the message in small chunks with delays in between.
+        // It ensures that read_next_payload can handle partial reads and still correctly parse the message once fully received.
+        let message = MockMessage::new_dummy_message();
+        let payload_bytes = message.get_message_bytes();
+
+        let (mut reader, mut writer) = io::pipe().expect("Failed to create pipe for testing");
+
+        // Simulate a slow writer by writing the message in small chunks with delays
+        std::thread::spawn({
+            move || {
+                // Write 5 bytes at a time with a delay to simulate slowness
+                for chunk in payload_bytes.chunks(5) {
+                    writer.write(chunk).expect("Failed to write chunk");
+                    writer.flush().expect("Failed to flush writer");
+                    std::thread::sleep(std::time::Duration::from_millis(100)); // 100ms delay between chunks
+                }
+            }
+        });
+
+        let mut read_buffer = [0u8; 1024];
+        let result = read_next_payload::<MockMessage, PipeReader>(&mut reader, &mut read_buffer, 0)
+            .expect("Failed to read payload from slow writer");
+        assert_eq!(result.message, message);
     }
 }
