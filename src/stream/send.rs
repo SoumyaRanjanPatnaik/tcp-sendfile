@@ -2,7 +2,7 @@ use log::info;
 
 use crate::{
     stream::{error::SendFileError, utils::initialize_handshake},
-    transport::{TransportMessageV1, MAX_MESSAGE_SIZE},
+    transport::{ReceiverMessageV1, MAX_MESSAGE_SIZE},
 };
 use std::path::Path;
 
@@ -25,7 +25,7 @@ pub fn send_file(
     )?;
 
     // Validate the handshake response and log the negotiated parameters
-    if let TransportMessageV1::Handshake {
+    if let ReceiverMessageV1::HandshakeAck {
         file_hash,
         total_size,
         concurrency,

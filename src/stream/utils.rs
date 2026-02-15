@@ -2,7 +2,7 @@ use crate::{
     connection::read_next_payload,
     file::FileMetadata,
     stream::error::SendFileError,
-    transport::{self, TransportMessageV1},
+    transport::{self, ReceiverMessageV1, SenderMessageV1},
 };
 use log::{debug, info};
 use std::{io::Write, net::TcpStream, path::Path};
@@ -15,7 +15,7 @@ pub fn initialize_handshake<'a>(
     file_path: &Path,
     block_size: u32,
     concurrency: u16,
-) -> Result<TransportMessageV1<'a>, SendFileError> {
+) -> Result<ReceiverMessageV1<'a>, SendFileError> {
     debug!("Calculating file metadata for {:?}", file_path);
 
     let file_metadata = FileMetadata::from_file(file_path)?;
@@ -23,7 +23,7 @@ pub fn initialize_handshake<'a>(
     info!("File size: {} bytes", file_metadata.size());
     info!("File SHA-256 hash: {:x?}", file_metadata.hash());
 
-    let handshake_message = TransportMessageV1::Handshake {
+    let handshake_message = SenderMessageV1::Handshake {
         file_name: file_metadata.name(),
         file_hash: &file_metadata.hash(),
         total_size: file_metadata.size(),
