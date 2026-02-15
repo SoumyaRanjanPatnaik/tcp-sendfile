@@ -5,6 +5,8 @@ use thiserror::Error;
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_BLOCK_SIZE: u32 = 4 * 1024 * 1024; // 4 MB
+pub const MAX_MESSAGE_SIZE: usize = MAX_BLOCK_SIZE as usize + 128; // Max block size plus some overhead for headers and metadata
+pub const MESSAGE_DELIMITER: &[u8] = b"\r\n\r\n";
 
 #[derive(Error, Debug)]
 pub enum TransportError {
@@ -35,7 +37,7 @@ pub enum TransportMessageV1<'a> {
     Handshake {
         /// SHA-256 hash of the file being transferred, used for integrity verification,
         /// and deduplication on the receiver side.
-        file_hash: [u8; 32],
+        file_hash: &'a [u8],
 
         /// Total size of the file in bytes, used for progress tracking and pre-allocation
         /// on the receiver side.
@@ -45,7 +47,7 @@ pub enum TransportMessageV1<'a> {
         concurrency: u16,
 
         /// Original file name, used for allocating the file on the receiver side and for display purposes.
-        file_name: String,
+        file_name: &'a str,
 
         /// Size of each data block in bytes, used for splitting the file into chunks and for progress tracking.
         block_size: u32,
@@ -94,6 +96,15 @@ impl<'a> TransportMessageV1<'a> {
     }
 }
 
+pub fn attach_headers(payload: &[u8]) -> Box<[u8]> {
+    let mut message = Vec::with_capacity(64 + payload.len());
+    message.extend_from_slice(format!("Ver: {}\r\n", PROTOCOL_VERSION).as_bytes());
+    message.extend_from_slice(format!("Len: {}\r\n", payload.len()).as_bytes());
+    message.extend_from_slice(b"\r\n");
+    message.extend_from_slice(payload);
+    message.into_boxed_slice()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,10 +112,10 @@ mod tests {
     #[test]
     fn test_handshake_serde() {
         let msg = TransportMessageV1::Handshake {
-            file_hash: [0xAA; 32],
+            file_hash: &[0xAA; 32],
             total_size: 1024 * 1024,
             concurrency: 8,
-            file_name: "test_file.txt".to_string(),
+            file_name: "test_file.txt",
             block_size: MAX_BLOCK_SIZE,
         };
 

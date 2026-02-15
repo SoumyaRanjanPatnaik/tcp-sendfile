@@ -1,14 +1,11 @@
+//! Utility functions for file handling, such as calculating the SHA-256 hash of a file.
 use crate::transport::MAX_BLOCK_SIZE;
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufReader, Read};
 
-enum EndOfFile {
-    Reached,
-    NotReached,
-}
-
+/// Calculates the SHA-256 hash of a file at the given path.
 pub fn get_file_sha256_hash(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
     let file = File::open(file_path)?;
     let mut reader = BufReader::new(file);
@@ -20,22 +17,22 @@ pub fn get_file_sha256_hash(file_path: &std::path::Path) -> Result<[u8; 32], std
     }
 
     loop {
-        let result = BUFFER.with(|buffer_cell| {
+        let is_eof_result = BUFFER.with(|buffer_cell| {
             let mut buffer = buffer_cell.borrow_mut();
             let bytes_read = reader.read(&mut buffer)?;
 
             if bytes_read == 0 {
-                return Ok(EndOfFile::Reached);
+                return Ok(true);
             }
 
             hasher.update(&buffer[..bytes_read]);
-            Ok(EndOfFile::NotReached)
+            Ok(false)
         });
 
-        match result {
-            Ok(EndOfFile::Reached) => break,
-            Ok(EndOfFile::NotReached) => continue,
-            Err(e) => return Err(e),
+        match is_eof_result {
+            Ok(true) => break,       // EOF reached
+            Ok(false) => continue,   // Processed a chunk, continue reading
+            Err(e) => return Err(e), // Propagate any I/O errors
         }
     }
 
