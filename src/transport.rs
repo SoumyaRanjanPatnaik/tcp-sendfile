@@ -3,10 +3,17 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const PROTOCOL_VERSION: u8 = 1;
+pub const CURRENT_PROTOCOL_VERSION: u8 = 1;
 pub const MAX_BLOCK_SIZE: u32 = 4 * 1024 * 1024; // 4 MB
 pub const MAX_MESSAGE_SIZE: usize = MAX_BLOCK_SIZE as usize + 128; // Max block size plus some overhead for headers and metadata
-pub const MESSAGE_DELIMITER: &[u8] = b"\r\n\r\n";
+
+pub const VERSION_HEADER_PREFIX_STR: &str = "Ver: ";
+pub const LENGTH_HEADER_PREFIX_STR: &str = "Len: ";
+pub const VERSION_HEADER_PRIFIX: &[u8] = VERSION_HEADER_PREFIX_STR.as_bytes();
+pub const LENGTH_HEADER_PREFIX: &[u8] = LENGTH_HEADER_PREFIX_STR.as_bytes();
+
+pub const MESSAGE_DELIMITER_STR: &str = "\r\n\r\n";
+pub const MESSAGE_DELIMITER: &[u8] = MESSAGE_DELIMITER_STR.as_bytes();
 
 #[derive(Error, Debug)]
 pub enum TransportError {
@@ -98,9 +105,26 @@ impl<'a> TransportMessageV1<'a> {
 
 pub fn attach_headers(payload: &[u8]) -> Box<[u8]> {
     let mut message = Vec::with_capacity(64 + payload.len());
-    message.extend_from_slice(format!("Ver: {}\r\n", PROTOCOL_VERSION).as_bytes());
-    message.extend_from_slice(format!("Len: {}\r\n", payload.len()).as_bytes());
-    message.extend_from_slice(b"\r\n");
+    message.extend_from_slice(
+        format!(
+            //Ver: [PROTOCOL_VERSION]\r\n
+            "{VERSION_HEADER_PREFIX_STR}: {}{MESSAGE_DELIMITER_STR}",
+            CURRENT_PROTOCOL_VERSION
+        )
+        .as_bytes(),
+    );
+    message.extend_from_slice(
+        format!(
+            //Len: [length of payload]\r\n
+            "{LENGTH_HEADER_PREFIX_STR}: {}{MESSAGE_DELIMITER_STR}",
+            payload.len()
+        )
+        .as_bytes(),
+    );
+    // Headers are separated from the payload by an additional delimiter
+    message.extend_from_slice(MESSAGE_DELIMITER);
+
+    // Append the actual message payload after the headers
     message.extend_from_slice(payload);
     message.into_boxed_slice()
 }
