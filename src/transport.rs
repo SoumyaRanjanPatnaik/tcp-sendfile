@@ -57,12 +57,17 @@ pub enum SenderMessageV1<'a> {
         seq: u32,
         /// Checksum of the chunk data, used for integrity verification on the receiver side.
         checksum: u32,
+        /// SHA-256 hash of the file this data belongs to.
+        file_hash: &'a [u8],
         /// Actual chunk data being sent, with length specified in the Len header of the message.
         data: &'a [u8],
     },
 
     /// A request from sender to receiver to report the current progress of the transfer, including total bytes received so far.
-    ProgressRequest,
+    ProgressRequest {
+        /// SHA-256 hash of the file being tracked.
+        file_hash: &'a [u8],
+    },
 
     /// An error message sent from the sender to indicate a problem.
     Error { code: u16, message: String },
@@ -86,6 +91,8 @@ impl<'a> SenderMessageV1<'a> {
 pub enum ReceiverMessageV1 {
     /// A request from receiver to sender to send a specific chunk of the file.
     Request {
+        /// SHA-256 hash of the file being requested.
+        file_hash: [u8; 32],
         /// Sequence number of the chunk being requested, used for tracking which chunks have been sent and received.
         /// In case of retransmissions, the receiver may request the same chunk multiple times until it is
         /// successfully received and verified.
@@ -94,7 +101,18 @@ pub enum ReceiverMessageV1 {
 
     /// A response from receiver to sender with the total bytes received so far.
     /// Used for progress tracking and retransmission decisions on the sender side.
-    ProgressResponse { bytes_received: u64 },
+    ProgressResponse {
+        /// SHA-256 hash of the file being tracked.
+        file_hash: [u8; 32],
+        bytes_received: u64,
+    },
+
+    /// A signal from the receiver that the file has been successfully received and verified.
+    /// This marks the completion of the transfer for this connection.
+    TransferComplete {
+        /// SHA-256 hash of the file that was completed.
+        file_hash: [u8; 32],
+    },
 
     /// An error message sent from the receiver to indicate a problem.
     Error { code: u16, message: String },
@@ -161,11 +179,24 @@ mod tests {
     }
 
     #[test]
+    fn test_transfer_complete_serde() {
+        let msg = ReceiverMessageV1::TransferComplete {
+            file_hash: [0xBB; 32],
+        };
+        let mut buffer = [0u8; 1024];
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = ReceiverMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
     fn test_data_serde() {
         let data_payload = [1, 2, 3, 4, 5];
         let msg = SenderMessageV1::Data {
             seq: 10,
             checksum: 0xDEADBEEF,
+            file_hash: &[0xAA; 32],
             data: &data_payload,
         };
 
@@ -192,7 +223,9 @@ mod tests {
 
     #[test]
     fn test_progress_request_serde() {
-        let msg = SenderMessageV1::ProgressRequest;
+        let msg = SenderMessageV1::ProgressRequest {
+            file_hash: &[0xCC; 32],
+        };
 
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -204,6 +237,7 @@ mod tests {
     #[test]
     fn test_progress_response_serde() {
         let msg = ReceiverMessageV1::ProgressResponse {
+            file_hash: [0xDD; 32],
             bytes_received: 512 * 1024,
         };
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
@@ -215,7 +249,10 @@ mod tests {
 
     #[test]
     fn test_request_serde() {
-        let msg = ReceiverMessageV1::Request { seq: 42 };
+        let msg = ReceiverMessageV1::Request {
+            file_hash: [0xEE; 32],
+            seq: 42,
+        };
         let mut buffer = [0u8; 1024]; // Large enough buffer for
                                       // serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -230,6 +267,7 @@ mod tests {
         let msg = SenderMessageV1::Data {
             seq: 100,
             checksum: 0xBEEFDEAD,
+            file_hash: &[0xFF; 32],
             data: &data_payload,
         };
 
