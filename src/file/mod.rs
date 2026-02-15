@@ -1,9 +1,7 @@
-mod receive;
-mod send;
-mod utils;
+pub mod utils;
 
 #[derive(Debug)]
-struct FileMetadata {
+pub struct FileMetadata {
     // Original file name, used for allocating the file on the receiver side and for display purposes.
     name: String,
     /// Size of the file in bytes
@@ -15,7 +13,7 @@ struct FileMetadata {
 // TODO: Remove this once the functions start being used
 #[allow(dead_code)]
 impl FileMetadata {
-    fn new(filename: String, filesize: u64, filehash: [u8; 32]) -> Self {
+    pub fn new(filename: String, filesize: u64, filehash: [u8; 32]) -> Self {
         Self {
             name: filename,
             size: filesize,
@@ -23,7 +21,7 @@ impl FileMetadata {
         }
     }
 
-    fn from_file(path: &std::path::Path) -> std::io::Result<Self> {
+    pub fn from_file(path: &std::path::Path) -> std::io::Result<Self> {
         let filename = path
             .file_name()
             .and_then(|name| name.to_str())
@@ -40,15 +38,15 @@ impl FileMetadata {
         })
     }
 
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         &self.name
     }
 
-    fn size(&self) -> u64 {
+    pub fn size(&self) -> u64 {
         self.size
     }
 
-    fn hash(&self) -> [u8; 32] {
+    pub fn hash(&self) -> [u8; 32] {
         self.hash
     }
 }

@@ -16,6 +16,8 @@ pub enum ConnectionError {
     InvalidAddress(#[from] std::net::AddrParseError),
 }
 
+// TODO: Remove this once the function starts being used
+#[allow(dead_code)]
 /// Sends a file to the specified address using the custom file transfer protocol.
 pub fn send_file(
     address: (&str, u16),
