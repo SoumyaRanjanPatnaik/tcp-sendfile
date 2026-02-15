@@ -83,27 +83,7 @@ impl<'a> SenderMessageV1<'a> {
 
 /// Messages sent from the Receiver (the one receiving the file) to the Sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ReceiverMessageV1<'a> {
-    /// Receiver responds with a handshake acknowledgment to confirm parameters and start the transfer.
-    HandshakeAck {
-        /// SHA-256 hash of the file being transferred, used for integrity verification,
-        /// and deduplication on the receiver side.
-        file_hash: &'a [u8],
-
-        /// Total size of the file in bytes, used for progress tracking and pre-allocation
-        /// on the receiver side.
-        total_size: u64,
-
-        /// Number of concurrent connections for transferring the file
-        concurrency: u16,
-
-        /// Original file name, used for allocating the file on the receiver side and for display purposes.
-        file_name: &'a str,
-
-        /// Size of each data block in bytes, used for splitting the file into chunks and for progress tracking.
-        block_size: u32,
-    },
-
+pub enum ReceiverMessageV1 {
     /// A request from receiver to sender to send a specific chunk of the file.
     Request {
         /// Sequence number of the chunk being requested, used for tracking which chunks have been sent and received.
@@ -120,7 +100,7 @@ pub enum ReceiverMessageV1<'a> {
     Error { code: u16, message: String },
 }
 
-impl<'a> ReceiverMessageV1<'a> {
+impl ReceiverMessageV1 {
     /// Serializes the message into a byte vector using postcard.
     pub fn to_bytes<'b>(&self, buffer: &'b mut [u8]) -> Result<&'b mut [u8], TransportError> {
         let message = postcard::to_slice(&self, buffer)?;
@@ -128,7 +108,7 @@ impl<'a> ReceiverMessageV1<'a> {
     }
 
     /// Deserializes a message from a byte slice using postcard.
-    pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, TransportError> {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, TransportError> {
         Ok(postcard::from_bytes(bytes)?)
     }
 }

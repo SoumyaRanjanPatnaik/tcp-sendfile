@@ -9,13 +9,13 @@ use std::{io::Write, net::TcpStream, path::Path};
 
 /// Initializes a file handshake with the specified address and file path,
 /// sending the necessary metadata to the receiver.
-pub fn initialize_handshake<'a>(
-    transport_buffer: &'a mut [u8],
+pub fn initialize_handshake(
+    transport_buffer: &mut [u8],
     address: (&str, u16),
     file_path: &Path,
     block_size: u32,
     concurrency: u16,
-) -> Result<ReceiverMessageV1<'a>, SendFileError> {
+) -> Result<(), SendFileError> {
     debug!("Calculating file metadata for {:?}", file_path);
 
     let file_metadata = FileMetadata::from_file(file_path)?;
@@ -49,7 +49,5 @@ pub fn initialize_handshake<'a>(
     stream.write_all(&handshake_message)?;
     stream.flush()?; // Ensure the message is sent immediately
 
-    let handshake_response = read_next_payload(&mut stream, transport_buffer, 0)?;
-
-    Ok(handshake_response.message)
+    Ok(())
 }

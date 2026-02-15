@@ -16,31 +16,14 @@ pub fn send_file(
     concurrency: u16,
 ) -> Result<(), SendFileError> {
     let mut transport_buffer = vec![0u8; MAX_MESSAGE_SIZE];
-    let handshake_response = initialize_handshake(
+    initialize_handshake(
         &mut transport_buffer,
         address,
         file_path,
         block_size,
         concurrency,
-    )?;
+    )
+    .expect("Failed to initialize handshake");
 
-    // Validate the handshake response and log the negotiated parameters
-    if let ReceiverMessageV1::HandshakeAck {
-        file_hash,
-        total_size,
-        concurrency,
-        file_name,
-        block_size,
-    } = handshake_response
-    {
-        info!("Handshake successful with receiver:");
-        info!("Negotiated File Name: {}", file_name);
-        info!("Negotiated File Hash: {:x?}", file_hash);
-        info!("Negotiated Total Size: {} bytes", total_size);
-        info!("Negotiated Concurrency: {}", concurrency);
-        info!("Negotiated Block Size: {} bytes", block_size);
-    } else {
-        panic!("Expected handshake response from receiver, but received a different message type");
-    }
     Ok(())
 }
