@@ -1,12 +1,10 @@
-use std::{io::Write, net::TcpStream, path::Path};
-
-use log::{debug, info};
-use thiserror::Error;
-
 use crate::{
     file::FileMetadata,
     transport::{self, TransportError, TransportMessageV1, MAX_MESSAGE_SIZE},
 };
+use log::{debug, info};
+use std::{io::Write, net::TcpStream, path::Path};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ConnectionError {
@@ -18,6 +16,7 @@ pub enum ConnectionError {
     InvalidAddress(#[from] std::net::AddrParseError),
 }
 
+/// Sends a file to the specified address using the custom file transfer protocol.
 pub fn send_file(
     address: (&str, u16),
     file_path: &Path,
