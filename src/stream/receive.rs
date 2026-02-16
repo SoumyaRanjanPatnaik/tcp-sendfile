@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     fs::OpenOptions,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
@@ -437,16 +438,16 @@ fn process_data_block(
         });
     }
 
-    let block_data = if data.compressed {
+    let block_data: Cow<[u8]> = if data.compressed {
         match decompress_gzip(data.data) {
-            Ok(d) => d,
+            Ok(d) => Cow::Owned(d),
             Err(e) => {
                 warn!("Failed to decompress block {}: {}", seq, e);
                 return Err(SendFileError::Io(e));
             }
         }
     } else {
-        data.data.to_vec()
+        Cow::Borrowed(data.data)
     };
 
     if let Err(e) = write_file_block(file, seq, state.block_size, &block_data) {
