@@ -243,7 +243,14 @@ fn verify_existing_blocks(
             info!("Block {} verified successfully", seq);
         } else {
             info!("Block {} verification failed, will re-download", seq);
-            request_and_download_block(stream, state, seq, &mut buffer, &mut file)?;
+            request_and_download_block(
+                stream,
+                state,
+                seq,
+                &mut buffer,
+                &mut write_buffer,
+                &mut file,
+            )?;
         }
     }
 
@@ -303,6 +310,7 @@ fn download_missing_blocks(
 ) -> Result<(), SendFileError> {
     let mut current_seq = range_start;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
+    let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -317,7 +325,14 @@ fn download_missing_blocks(
         let mut retry_delay = INITIAL_RETRY_DELAY_MS;
 
         loop {
-            match request_and_download_block(stream, state, seq, &mut buffer, &mut file) {
+            match request_and_download_block(
+                stream,
+                state,
+                seq,
+                &mut buffer,
+                &mut write_buffer,
+                &mut file,
+            ) {
                 Ok(()) => {
                     state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
                     current_seq += 1;
@@ -352,16 +367,15 @@ fn request_and_download_block(
     state: &ReceiverState,
     seq: u32,
     buffer: &mut [u8],
+    write_buffer: &mut [u8],
     file: &mut std::fs::File,
 ) -> Result<(), SendFileError> {
-    let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
-
     let msg = ReceiverMessageV1::Request(RequestV1 {
         file_hash: state.file_hash,
         seq,
     });
 
-    if let Err(e) = send_message(stream, &msg, &mut write_buffer) {
+    if let Err(e) = send_message(stream, &msg, write_buffer) {
         warn!("Failed to send request for block {}: {}", seq, e);
         return Err(SendFileError::ConnectionFailed(format!(
             "Failed to send request for block {}: {}",
@@ -382,9 +396,7 @@ fn request_and_download_block(
     };
 
     match result.message {
-        SenderMessageV1::Data(data) => {
-            process_data_block(state, seq, data, &mut write_buffer, file)
-        }
+        SenderMessageV1::Data(data) => process_data_block(state, seq, data, write_buffer, file),
         SenderMessageV1::Error(err) => {
             error!(
                 "Sender error for block {}: {} - {}",
