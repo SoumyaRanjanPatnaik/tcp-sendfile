@@ -2,6 +2,8 @@
 
 A cross-platform file transfer utility capable of securely transferring files over the network using TCP.
 
+To learn more about how it works, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Features
 
 - **Large File Support**: Transfers files up to 16 GB
@@ -116,3 +118,31 @@ cargo test test_name
 - **Block Size**: Configurable up to 4 MB for optimal throughput
 - **Compression**: Smart probing determines if compression helps (only applied when size reduces)
 - **Parallel Hashing**: BLAKE3 hash computed in parallel for large files
+
+## Perfomance Metrics
+
+Below table demonstrates the time taken to transfer a 1G file on the same system over a TCP socket.
+
+| Metric              | Without Compression | With Compression |
+| ------------------- | ------------------- | ---------------- |
+| Time                | 1.678s              | 1.690s           |
+| Estimated Bandwidth | 595.94 MBps         | 591.7 MBps       |
+
+![Performance Metrics](assets/performance_metrics_1G.png)
+
+For larger files, the performance is even better, since the fixed time at the beginning of the process spent towards
+file hashing takes up a smaller share of the overall send.
+
+Below is an example with a 10G file transfer
+
+| Metric              | Without Compression | With Compression |
+| ------------------- | ------------------- | ---------------- |
+| Time                | 12.062s             | 12.318s          |
+| Estimated Bandwidth | 829.05 MBps         | 811.82 MBps      |
+
+![Performance Metrics](assets/performance_metrics_10G.png)
+
+## Demo
+
+![Demo Video](assets/demo.mkv)
+

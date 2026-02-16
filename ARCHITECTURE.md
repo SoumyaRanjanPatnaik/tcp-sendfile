@@ -74,4 +74,5 @@ To maximize bandwidth utilization, the file is virtually split into "ranges" bas
 ---
 
 ## 4. C4 Architecture Diagrams
-![C4 Diagram](C4-diag.svg)
+
+![C4 Diagram](assets/C4-diag.svg)
