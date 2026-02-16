@@ -16,7 +16,7 @@ pub fn get_file_blake3_hash(file_path: &std::path::Path) -> Result<[u8; 32], std
         return hash_sequential(file_path);
     }
 
-    let num_chunks = (file_size + PARALLEL_CHUNK_SIZE - 1) / PARALLEL_CHUNK_SIZE;
+    let num_chunks = file_size.div_ceil(PARALLEL_CHUNK_SIZE);
     let _num_threads = thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1)
