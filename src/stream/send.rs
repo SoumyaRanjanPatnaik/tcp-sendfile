@@ -90,6 +90,11 @@ pub fn send_file(
                     continue;
                 }
 
+                if let Err(e) = stream.set_nodelay(true) {
+                    warn!("Failed to set TCP_NODELAY, dropping connection: {}", e);
+                    continue;
+                }
+
                 let active_connections = active_connections.clone();
                 let transfer_complete = transfer_complete.clone();
 

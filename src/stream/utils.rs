@@ -43,6 +43,7 @@ pub fn initialize_handshake(
         format!("{}:{}", address.0, address.1)
     );
     let mut stream = TcpStream::connect(address)?;
+    stream.set_nodelay(true)?;
 
     info!("Connected to server, Initiating: {:?}", file_path);
     stream.write_all(&handshake_message)?;

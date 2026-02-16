@@ -178,6 +178,7 @@ fn run_connection(
 ) -> Result<(), SendFileError> {
     // Connect to the sender for this thread's assigned block range
     let mut stream = TcpStream::connect((state.sender_addr.ip(), TRANSFER_PORT))?;
+    stream.set_nodelay(true)?;
 
     if state.is_existing_file {
         verify_existing_blocks(&mut stream, &state, range_start, range_end)?;
