@@ -176,26 +176,28 @@ fn run_connection(
     range_start: u32,
     range_end: u32,
 ) -> Result<(), SendFileError> {
+    // Connect to the sender for this thread's assigned block range
+    let mut stream = TcpStream::connect((state.sender_addr.ip(), TRANSFER_PORT))?;
+
     if state.is_existing_file {
-        verify_existing_blocks(&state, range_start, range_end)?;
+        verify_existing_blocks(&mut stream, &state, range_start, range_end)?;
+    } else {
+        download_missing_blocks(&mut stream, &state, range_start, range_end)?;
     }
 
-    download_missing_blocks(&state, range_start, range_end)?;
-
     if is_transfer_complete(&state) {
-        send_transfer_complete(&state)?;
+        send_transfer_complete(&mut stream, &state)?;
     }
 
     Ok(())
 }
 
 fn verify_existing_blocks(
+    stream: &mut TcpStream,
     state: &ReceiverState,
     range_start: u32,
     range_end: u32,
 ) -> Result<(), SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
-    let mut stream = TcpStream::connect(sender_addr)?;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut filled_len = 0;
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
@@ -224,10 +226,9 @@ fn verify_existing_blocks(
             checksum: checksum_val,
         });
 
-        send_message(&mut stream, &msg, &mut write_buffer)?;
+        send_message(stream, &msg, &mut write_buffer)?;
 
-        let (valid, next_filled_len) =
-            read_verify_response(&mut stream, &mut buffer, filled_len, seq)?;
+        let (valid, next_filled_len) = read_verify_response(stream, &mut buffer, filled_len, seq)?;
 
         filled_len = next_filled_len;
 
@@ -291,6 +292,7 @@ fn read_verify_response(
 }
 
 fn download_missing_blocks(
+    stream: &mut TcpStream,
     state: &ReceiverState,
     range_start: u32,
     range_end: u32,
@@ -312,7 +314,7 @@ fn download_missing_blocks(
         let mut retry_delay = INITIAL_RETRY_DELAY_MS;
 
         loop {
-            let success = download_block_with_retry(state, current_seq)?;
+            let success = download_block_with_retry(stream, state, current_seq)?;
 
             if success {
                 state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
@@ -340,17 +342,11 @@ fn download_missing_blocks(
     Ok(())
 }
 
-fn download_block_with_retry(state: &ReceiverState, seq: u32) -> Result<bool, SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
-
-    let mut stream = match TcpStream::connect(sender_addr) {
-        Ok(s) => s,
-        Err(e) => {
-            warn!("Failed to connect to sender for block {}: {}", seq, e);
-            return Ok(false);
-        }
-    };
-
+fn download_block_with_retry(
+    stream: &mut TcpStream,
+    state: &ReceiverState,
+    seq: u32,
+) -> Result<bool, SendFileError> {
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
 
@@ -359,12 +355,12 @@ fn download_block_with_retry(state: &ReceiverState, seq: u32) -> Result<bool, Se
         seq,
     });
 
-    if let Err(e) = send_message(&mut stream, &msg, &mut write_buffer) {
+    if let Err(e) = send_message(stream, &msg, &mut write_buffer) {
         warn!("Failed to send request for block {}: {}", seq, e);
         return Ok(false);
     }
 
-    let result = match read_next_payload::<SenderMessageV1, _>(&mut stream, &mut buffer, 0) {
+    let result = match read_next_payload::<SenderMessageV1, _>(stream, &mut buffer, 0) {
         Ok(r) => r,
         Err(e) => {
             warn!("Failed to read response for block {}: {}", seq, e);
@@ -459,16 +455,17 @@ fn is_transfer_complete(state: &ReceiverState) -> bool {
         .all(|b| b.load(Ordering::SeqCst))
 }
 
-fn send_transfer_complete(state: &ReceiverState) -> Result<(), SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
-    let mut stream = TcpStream::connect(sender_addr)?;
+fn send_transfer_complete(
+    stream: &mut TcpStream,
+    state: &ReceiverState,
+) -> Result<(), SendFileError> {
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
 
     let msg = ReceiverMessageV1::TransferComplete(TransferCompleteV1 {
         file_hash: state.file_hash,
     });
 
-    send_message(&mut stream, &msg, &mut buffer)?;
+    send_message(stream, &msg, &mut buffer)?;
 
     info!("Sent TransferComplete for file {:?}", state.file_path);
     Ok(())
