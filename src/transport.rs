@@ -179,7 +179,7 @@ pub fn attach_headers(payload: &[u8]) -> Box<[u8]> {
     message.extend_from_slice(
         format!(
             //Ver: [PROTOCOL_VERSION]\r\n
-            "{VERSION_HEADER_PREFIX_STR}: {}{MESSAGE_DELIMITER_STR}",
+            "{VERSION_HEADER_PREFIX_STR}{}{MESSAGE_DELIMITER_STR}",
             CURRENT_PROTOCOL_VERSION
         )
         .as_bytes(),
@@ -187,7 +187,7 @@ pub fn attach_headers(payload: &[u8]) -> Box<[u8]> {
     message.extend_from_slice(
         format!(
             //Len: [length of payload]\r\n
-            "{LENGTH_HEADER_PREFIX_STR}: {}{MESSAGE_DELIMITER_STR}",
+            "{LENGTH_HEADER_PREFIX_STR}{}{MESSAGE_DELIMITER_STR}",
             payload.len()
         )
         .as_bytes(),
