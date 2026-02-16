@@ -38,6 +38,9 @@ pub struct SendArgs {
     /// Number of concurrent connections [default: capped to min(os_threads, 16)]
     #[arg(short, long)]
     pub concurrency: Option<u16>,
+
+    #[arg(long)]
+    pub no_compress: bool,
 }
 
 #[derive(Args)]

@@ -64,7 +64,7 @@ fn test_handle_data_request_compression_probe_positive() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler.handle_data_request(&req, &mut cursor);
+    let result = handler.handle_data_request(&req, &mut cursor, true);
     assert!(
         result.is_ok(),
         "handle_data_request should succeed: {:?}",
@@ -119,7 +119,7 @@ fn test_handle_data_request_compression_probe_negative() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler.handle_data_request(&req, &mut cursor);
+    let result = handler.handle_data_request(&req, &mut cursor, true);
     assert!(
         result.is_ok(),
         "handle_data_request should succeed: {:?}",
@@ -164,7 +164,7 @@ fn test_handle_data_request_honors_compression_disabled() {
     let mut cursor = Cursor::new(Vec::new());
 
     let _ = handler
-        .handle_data_request(&req, &mut cursor)
+        .handle_data_request(&req, &mut cursor, true)
         .expect("handle_data_request failed");
 
     let written = cursor.into_inner();
@@ -203,7 +203,7 @@ fn test_handle_data_request_mismatched_hash() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler.handle_data_request(&req, &mut cursor);
+    let result = handler.handle_data_request(&req, &mut cursor, true);
 
     assert!(result.is_err(), "Should return error for mismatched hash");
     assert!(cursor.into_inner().is_empty(), "Should not write anything");
@@ -233,7 +233,7 @@ fn test_handle_data_request_eof_handling() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler.handle_data_request(&req, &mut cursor);
+    let result = handler.handle_data_request(&req, &mut cursor, true);
     assert!(
         result.is_ok(),
         "handle_data_request should succeed: {:?}",

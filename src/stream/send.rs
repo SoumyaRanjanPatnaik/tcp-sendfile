@@ -31,6 +31,7 @@ pub fn send_file(
     address: (&str, u16),
     file_path: &Path,
     block_size: u32,
+    should_compress: bool,
 ) -> Result<(), SendFileError> {
     let available_parallelism = std::thread::available_parallelism()
         .map(|n| n.get())
@@ -105,6 +106,7 @@ pub fn send_file(
                         &file_hash,
                         file_path,
                         block_size,
+                        should_compress,
                         transfer_complete.clone(),
                     );
                     active_connections.fetch_sub(1, Ordering::SeqCst);
@@ -127,6 +129,7 @@ fn handle_connection(
     expected_hash: &[u8; 32],
     file_path: &Path,
     block_size: u32,
+    should_compress: bool,
     transfer_complete: Arc<AtomicBool>,
 ) -> Result<(), SendFileError> {
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
@@ -169,7 +172,7 @@ fn handle_connection(
 
                 match message {
                     ReceiverMessageV1::Request(req) => {
-                        handler.handle_data_request(&req, &mut stream)?;
+                        handler.handle_data_request(&req, &mut stream, should_compress)?;
                     }
                     ReceiverMessageV1::Progress(prog) => {
                         handler.handle_progress(&prog)?;
@@ -236,6 +239,7 @@ impl ConnectionHandler {
         &mut self,
         req: &RequestV1,
         writer: &mut W,
+        should_compress: bool,
     ) -> Result<(), SendFileError> {
         let RequestV1 { seq, file_hash } = req;
 
@@ -254,11 +258,12 @@ impl ConnectionHandler {
                 let final_data: &[u8];
 
                 // Determine if we should attempt compression
-                let attempt_compression = match self.compression_enabled {
-                    Some(true) => true,
-                    Some(false) => false,
-                    None => true, // Probe on first request
-                };
+                let attempt_compression = should_compress
+                    && match self.compression_enabled {
+                        Some(true) => true,
+                        Some(false) => false,
+                        None => true, // Probe on first request
+                    };
 
                 if attempt_compression {
                     let mut compression_success = false;
