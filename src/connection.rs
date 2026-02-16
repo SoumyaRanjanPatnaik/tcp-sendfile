@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::{self},
     str::FromStr,
 };
@@ -7,6 +8,7 @@ use crate::transport::{
     CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE, MESSAGE_DELIMITER,
     VERSION_HEADER_PRIFIX,
 };
+use log::debug;
 use serde::Deserialize;
 
 #[derive(thiserror::Error, Debug)]
@@ -163,7 +165,7 @@ fn parse_all_headers(header_buffer: &[u8]) -> Result<(u8, usize), StreamReadErro
 /// - `line`: The header line to parse, as a byte slice.
 /// - `prefix_len`: The length of the expected prefix (including the ": " separator). This is used to
 /// split the header line and extract the value portion.
-fn parse_header_line<ParsedValue: FromStr>(
+pub fn parse_header_line<ParsedValue: FromStr<Err = impl Display>>(
     line: &[u8],
     prefix_len: usize,
 ) -> Result<ParsedValue, StreamReadError> {
@@ -174,13 +176,14 @@ fn parse_header_line<ParsedValue: FromStr>(
                     "Header is too short to contain expected prefix of length {prefix_len}"
                 ),
             })?;
-    let parsed_value = str::from_utf8(header_value_bytes)
+    let parsed_value = str::from_utf8(header_value_bytes.trim_ascii())
+        .inspect(|header| debug!("Parsing header line: {}", header))
         .map_err(|e| StreamReadError::InvalidMessageFormat {
             details: format!("Version header is not valid UTF-8: {e}"),
         })?
         .parse::<ParsedValue>()
-        .map_err(|_| StreamReadError::InvalidMessageFormat {
-            details: "Version header does not contain a valid number".to_string(),
+        .map_err(|e| StreamReadError::InvalidMessageFormat {
+            details: format!("Version header does not contain a valid number - {e}"),
         })?;
 
     Ok(parsed_value)
