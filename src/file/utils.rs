@@ -111,7 +111,6 @@ pub fn write_file_block(
     let offset = seq as u64 * block_size as u64;
     file.seek(SeekFrom::Start(offset))?;
     file.write_all(data)?;
-    file.flush()?;
     Ok(())
 }
 

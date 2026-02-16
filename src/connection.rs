@@ -8,7 +8,6 @@ use crate::transport::{
     CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE, MESSAGE_DELIMITER,
     VERSION_HEADER_PRIFIX,
 };
-use log::debug;
 use serde::Deserialize;
 
 /// Errors that can occur when reading from a stream.
@@ -183,7 +182,6 @@ pub fn parse_header_line<ParsedValue: FromStr<Err = impl Display>>(
                 ),
             })?;
     let parsed_value = str::from_utf8(header_value_bytes.trim_ascii())
-        .inspect(|header| debug!("Parsing header line: {}", header))
         .map_err(|e| StreamReadError::InvalidMessageFormat {
             details: format!("Version header is not valid UTF-8: {e}"),
         })?
