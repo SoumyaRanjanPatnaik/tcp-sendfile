@@ -70,3 +70,8 @@ To maximize bandwidth utilization, the file is virtually split into "ranges" bas
 
 - **Parallel Hashing**: BLAKE3 hashing is parallelized using Rayon-like logic (manual threading in this case) to prevent hashing from becoming a bottleneck on multi-gigabyte files.
 - **Smart Compression**: The sender probes the first block with Gzip. If compression does not yield space savings (e.g., random data or already compressed files), it disables compression for the remainder of the session to save CPU cycles.
+
+---
+
+## 4. C4 Architecture Diagrams
+![C4 Diagram](C4-diag.svg)
