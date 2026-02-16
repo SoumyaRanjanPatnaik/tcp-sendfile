@@ -379,6 +379,15 @@ fn process_data_block(
     data: DataV1,
     write_buffer: &mut [u8],
 ) -> Result<bool, SendFileError> {
+    let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, data.data) as u32;
+    if computed_checksum != data.checksum {
+        warn!(
+            "Checksum mismatch for block {}: expected {}, got {}",
+            seq, data.checksum, computed_checksum
+        );
+        return Ok(false);
+    }
+
     let block_data = if data.compressed {
         match decompress_gzip(data.data) {
             Ok(d) => d,
@@ -390,15 +399,6 @@ fn process_data_block(
     } else {
         data.data.to_vec()
     };
-
-    let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, &block_data) as u32;
-    if computed_checksum != data.checksum {
-        warn!(
-            "Checksum mismatch for block {}: expected {}, got {}",
-            seq, data.checksum, computed_checksum
-        );
-        return Ok(false);
-    }
 
     let mut file = OpenOptions::new()
         .read(true)
@@ -483,4 +483,71 @@ pub fn is_transfer_complete_for_test(received_blocks: &[bool], total_blocks: u32
         .iter()
         .take(total_blocks as usize)
         .all(|&b| b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn test_process_data_block_checksum_logic() {
+        // Setup
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("test_checksum_fix.txt");
+        let _ = std::fs::remove_file(&file_path); // Cleanup
+
+        // Create and pre-allocate file
+        {
+            let file = std::fs::File::create(&file_path).unwrap();
+            file.set_len(1024).unwrap();
+        }
+
+        let state = ReceiverState {
+            file_hash: [0u8; 32],
+            _total_size: 100,
+            block_size: 1024,
+            _total_blocks: 1,
+            sender_addr: "127.0.0.1:0".parse().unwrap(),
+            received_blocks: vec![AtomicBool::new(false)],
+            bytes_received: AtomicU64::new(0),
+            file_path: file_path.clone(),
+            is_existing_file: false,
+        };
+
+        // Create compressed data
+        let original_data = b"Hello, World!";
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(original_data).unwrap();
+        let compressed_data = encoder.finish().unwrap();
+
+        // Calculate checksum on COMPRESSED data (as per sender logic)
+        let checksum_val = checksum(CrcAlgorithm::Crc32IsoHdlc, &compressed_data) as u32;
+
+        let data = DataV1 {
+            seq: 0,
+            checksum: checksum_val,
+            file_hash: &[0u8; 32],
+            compressed: true,
+            data: &compressed_data,
+        };
+
+        let mut write_buffer = vec![0u8; 1024];
+
+        // Execute
+        let result = process_data_block(&state, 0, data, &mut write_buffer);
+
+        // Verify
+        assert!(
+            result.is_ok(),
+            "process_data_block failed: {:?}",
+            result.err()
+        );
+        assert!(result.unwrap());
+
+        // Cleanup
+        let _ = std::fs::remove_file(file_path);
+    }
 }
