@@ -3,7 +3,7 @@ use crate::transport::MAX_BLOCK_SIZE;
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 
 /// Calculates the SHA-256 hash of a file at the given path.
 pub fn get_file_sha256_hash(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
@@ -67,10 +67,26 @@ pub fn read_file_block(
     Ok(buffer)
 }
 
+/// Writes a specific block to the file.
+///
+/// Seeks to `seq * block_size` and writes the data bytes.
+pub fn write_file_block(
+    file: &mut File,
+    seq: u32,
+    block_size: u32,
+    data: &[u8],
+) -> Result<(), std::io::Error> {
+    let offset = seq as u64 * block_size as u64;
+    file.seek(SeekFrom::Start(offset))?;
+    file.write_all(data)?;
+    file.flush()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{env::temp_dir, io::Write};
+    use std::{env::temp_dir, fs::OpenOptions, io::Write};
 
     #[test]
     fn test_get_file_sha256_hash() {
@@ -125,5 +141,36 @@ mod tests {
         // Read past EOF
         let block4 = read_file_block(&mut file, 3, 4).expect("Failed to read block 4");
         assert!(block4.is_empty());
+    }
+
+    #[test]
+    fn test_write_file_block() {
+        let temp_file_path = temp_dir().join("test_write_block.txt");
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&temp_file_path)
+            .expect("Failed to create temp file");
+
+        file.set_len(12).expect("Failed to pre-allocate file");
+
+        write_file_block(&mut file, 0, 4, b"AAAA").expect("Failed to write block 0");
+        write_file_block(&mut file, 1, 4, b"BBBB").expect("Failed to write block 1");
+        write_file_block(&mut file, 2, 4, b"CC").expect("Failed to write partial block 2");
+
+        let written = read_file_block(&mut file, 0, 4).expect("Failed to read block 0");
+        assert_eq!(written, b"AAAA");
+
+        let written = read_file_block(&mut file, 1, 4).expect("Failed to read block 1");
+        assert_eq!(written, b"BBBB");
+
+        let written = read_file_block(&mut file, 2, 4).expect("Failed to read block 2");
+        assert_eq!(written, b"CC\x00\x00");
+
+        file.set_len(10).expect("Failed to truncate file");
+        let written =
+            read_file_block(&mut file, 2, 4).expect("Failed to read block 2 after truncate");
+        assert_eq!(written, b"CC");
     }
 }
