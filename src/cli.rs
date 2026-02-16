@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
-pub const DEFAULT_PORT: u16 = 7878;
+pub const HANDSHAKE_PORT: u16 = 7878;
+pub const TRANSFER_PORT: u16 = 7879;
 
 #[derive(Parser)]
 #[command(name = "sendfile")]

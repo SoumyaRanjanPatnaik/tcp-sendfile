@@ -16,6 +16,7 @@ use flate2::read::GzDecoder;
 use log::{error, info, warn};
 
 use crate::{
+    cli::TRANSFER_PORT,
     connection::read_next_payload,
     file::utils::{read_file_block, write_file_block},
     stream::error::SendFileError,
@@ -27,7 +28,6 @@ use crate::{
 
 const MAX_RETRIES: u32 = 5;
 const INITIAL_RETRY_DELAY_MS: u64 = 500;
-const SENDER_PORT: u16 = 7890;
 
 pub fn receive_file(
     bind_addr: (&str, u16),
@@ -179,7 +179,7 @@ fn verify_existing_blocks(
     range_start: u32,
     range_end: u32,
 ) -> Result<(), SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), SENDER_PORT);
+    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
     let mut stream = TcpStream::connect(sender_addr)?;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut filled_len = 0;
@@ -326,7 +326,7 @@ fn download_missing_blocks(
 }
 
 fn download_block_with_retry(state: &ReceiverState, seq: u32) -> Result<bool, SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), SENDER_PORT);
+    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
 
     let mut stream = match TcpStream::connect(sender_addr) {
         Ok(s) => s,
@@ -445,7 +445,7 @@ fn is_transfer_complete(state: &ReceiverState) -> bool {
 }
 
 fn send_transfer_complete(state: &ReceiverState) -> Result<(), SendFileError> {
-    let sender_addr = (state.sender_addr.ip(), SENDER_PORT);
+    let sender_addr = (state.sender_addr.ip(), TRANSFER_PORT);
     let mut stream = TcpStream::connect(sender_addr)?;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
 

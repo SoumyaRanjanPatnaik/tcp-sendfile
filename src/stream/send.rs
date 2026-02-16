@@ -1,4 +1,5 @@
 use crate::{
+    cli::TRANSFER_PORT,
     connection::read_next_payload,
     file::utils::read_file_block,
     stream::{error::SendFileError, utils::initialize_handshake},
@@ -22,7 +23,6 @@ use std::{
     thread,
 };
 
-const SEND_LISTEN_PORT: u16 = 7890;
 const POLL_SLEEP_MS: u64 = 500;
 
 /// Sends a file to the specified address using the custom file transfer protocol.
@@ -46,9 +46,9 @@ pub fn send_file(
     )
     .expect("Failed to initialize handshake");
 
-    let listener = TcpListener::bind(("0.0.0.0", SEND_LISTEN_PORT))?;
+    let listener = TcpListener::bind(("0.0.0.0", TRANSFER_PORT))?;
     listener.set_nonblocking(true)?;
-    info!("Sender listening on 0.0.0.0:{}", SEND_LISTEN_PORT);
+    info!("Sender listening on 0.0.0.0:{}", TRANSFER_PORT);
 
     let active_connections = Arc::new(AtomicUsize::new(0));
     let transfer_complete = Arc::new(AtomicBool::new(false));

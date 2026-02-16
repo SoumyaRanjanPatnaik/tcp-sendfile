@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::{error, info};
-use sendfile::cli::{Cli, Commands, DEFAULT_PORT};
+use sendfile::cli::{Cli, Commands, HANDSHAKE_PORT};
 use sendfile::stream;
 use sendfile::transport::MAX_BLOCK_SIZE;
 
@@ -26,7 +26,7 @@ fn main() {
 
     match cli.command {
         Commands::Send(args) => {
-            let address = (args.host.as_str(), DEFAULT_PORT);
+            let address = (args.host.as_str(), HANDSHAKE_PORT);
             let block_size = args.block_size.unwrap_or(1024 * 1024).min(MAX_BLOCK_SIZE); // Default 1MB
 
             info!(
@@ -41,7 +41,7 @@ fn main() {
         }
         Commands::Receive(args) => {
             let concurrency = get_concurrency(args.concurrency);
-            let bind_address = ("0.0.0.0", DEFAULT_PORT);
+            let bind_address = ("0.0.0.0", HANDSHAKE_PORT);
 
             info!(
                 "Receiving file at {}:{} (output: {:?}, concurrency: {})",
