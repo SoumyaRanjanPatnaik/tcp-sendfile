@@ -1,5 +1,5 @@
 use crate::stream::send::ConnectionHandler;
-use crate::transport::{DataV1, ProgressV1, RequestV1, SenderMessageV1, TransferCompleteV1};
+use crate::transport::{ProgressV1, RequestV1, SenderMessageV1, TransferCompleteV1};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Cursor, Write};
@@ -44,7 +44,7 @@ fn parse_message(bytes: &[u8]) -> SenderMessageV1<'_> {
 }
 
 #[test]
-fn test_handle_request_compression_probe_positive() {
+fn test_handle_data_request_compression_probe_positive() {
     let data = vec![0u8; 1024]; // Highly compressible
     let hash = calculate_hash(&data);
     let (file, path) = create_temp_file(&data);
@@ -65,8 +65,8 @@ fn test_handle_request_compression_probe_positive() {
     let mut cursor = Cursor::new(Vec::new());
 
     let result = handler
-        .handle_request(&req, &mut cursor)
-        .expect("handle_request failed");
+        .handle_data_request(&req, &mut cursor)
+        .expect("handle_data_request failed");
     assert!(result, "Should return true to continue");
 
     // Check compression enabled
@@ -89,7 +89,7 @@ fn test_handle_request_compression_probe_positive() {
 }
 
 #[test]
-fn test_handle_request_compression_probe_negative() {
+fn test_handle_data_request_compression_probe_negative() {
     // Generate random data (incompressible)
     let mut data = Vec::with_capacity(1024);
     // Use a complex pattern to ensure incompressibility
@@ -118,8 +118,8 @@ fn test_handle_request_compression_probe_negative() {
     let mut cursor = Cursor::new(Vec::new());
 
     let result = handler
-        .handle_request(&req, &mut cursor)
-        .expect("handle_request failed");
+        .handle_data_request(&req, &mut cursor)
+        .expect("handle_data_request failed");
     assert!(result);
 
     assert_eq!(handler.compression_enabled, Some(false));
@@ -139,7 +139,7 @@ fn test_handle_request_compression_probe_negative() {
 }
 
 #[test]
-fn test_handle_request_honors_compression_disabled() {
+fn test_handle_data_request_honors_compression_disabled() {
     let data = vec![0u8; 1024]; // Compressible
     let hash = calculate_hash(&data);
     let (file, path) = create_temp_file(&data);
@@ -160,8 +160,8 @@ fn test_handle_request_honors_compression_disabled() {
     let mut cursor = Cursor::new(Vec::new());
 
     let _ = handler
-        .handle_request(&req, &mut cursor)
-        .expect("handle_request failed");
+        .handle_data_request(&req, &mut cursor)
+        .expect("handle_data_request failed");
 
     let written = cursor.into_inner();
     let msg = parse_message(&written);
@@ -178,7 +178,7 @@ fn test_handle_request_honors_compression_disabled() {
 }
 
 #[test]
-fn test_handle_request_mismatched_hash() {
+fn test_handle_data_request_mismatched_hash() {
     let data = b"some data";
     let hash = calculate_hash(data);
     let (file, path) = create_temp_file(data);
@@ -200,8 +200,8 @@ fn test_handle_request_mismatched_hash() {
     let mut cursor = Cursor::new(Vec::new());
 
     let result = handler
-        .handle_request(&req, &mut cursor)
-        .expect("handle_request failed");
+        .handle_data_request(&req, &mut cursor)
+        .expect("handle_data_request failed");
 
     assert_eq!(result, false, "Should return false to stop connection");
     assert!(cursor.into_inner().is_empty(), "Should not write anything");
@@ -210,7 +210,7 @@ fn test_handle_request_mismatched_hash() {
 }
 
 #[test]
-fn test_handle_request_eof_handling() {
+fn test_handle_data_request_eof_handling() {
     let data = vec![0u8; 100];
     let hash = calculate_hash(&data);
     let (file, path) = create_temp_file(&data);
@@ -232,8 +232,8 @@ fn test_handle_request_eof_handling() {
     let mut cursor = Cursor::new(Vec::new());
 
     let result = handler
-        .handle_request(&req, &mut cursor)
-        .expect("handle_request failed");
+        .handle_data_request(&req, &mut cursor)
+        .expect("handle_data_request failed");
 
     assert!(result, "Should return true");
 

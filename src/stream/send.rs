@@ -4,7 +4,7 @@ use crate::{
     stream::{error::SendFileError, utils::initialize_handshake},
     transport::{
         DataV1, ProgressV1, ReceiverErrorV1, ReceiverMessageV1, RequestV1, SenderErrorV1,
-        SenderMessageV1, TransferCompleteV1, MAX_MESSAGE_SIZE,
+        SenderMessageV1, TransferCompleteV1, VerifyBlockV1, VerifyResponseV1, MAX_MESSAGE_SIZE,
     },
 };
 use crc_fast::{checksum, CrcAlgorithm};
@@ -152,6 +152,16 @@ fn handle_connection(
                     ReceiverMessageV1::Error(err) => {
                         handler.handle_error(&err);
                         return false;
+                    }
+                    ReceiverMessageV1::VerifyBlock(verify) => {
+                        match handler.handle_verify_block(&verify, &mut stream) {
+                            Ok(true) => {}
+                            Ok(false) => return false,
+                            Err(e) => {
+                                error!("Verify block handling error: {}", e);
+                                return false;
+                            }
+                        }
                     }
                 }
             }
@@ -318,5 +328,76 @@ impl ConnectionHandler {
     pub fn handle_error(&mut self, err: &ReceiverErrorV1) {
         let ReceiverErrorV1 { code, message } = err;
         error!("Receiver error {}: {}", code, message);
+    }
+
+    pub fn handle_verify_block<W: Write>(
+        &mut self,
+        verify: &VerifyBlockV1,
+        writer: &mut W,
+    ) -> Result<bool, SendFileError> {
+        let VerifyBlockV1 {
+            file_hash,
+            seq,
+            checksum: receiver_checksum,
+        } = verify;
+
+        if file_hash != &self.expected_hash {
+            warn!(
+                "Received verify request for wrong file hash: {:?}",
+                file_hash
+            );
+            return Ok(false);
+        }
+        info!("Received verify request for seq {}", seq);
+
+        match read_file_block(&mut self.file, *seq, self.block_size) {
+            Ok(data) => {
+                let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, &data) as u32;
+                let valid = computed_checksum == *receiver_checksum;
+
+                info!(
+                    "Verify block seq {}: receiver={}, computed={}, valid={}",
+                    seq, receiver_checksum, computed_checksum, valid
+                );
+
+                let msg = SenderMessageV1::VerifyResponse(VerifyResponseV1 {
+                    file_hash: self.expected_hash,
+                    seq: *seq,
+                    valid,
+                });
+
+                match msg.to_bytes(&mut self.write_buffer) {
+                    Ok(payload) => {
+                        let packet = crate::transport::attach_headers(payload);
+                        if let Err(e) = writer.write_all(&packet) {
+                            error!("Failed to write verify response to stream: {}", e);
+                            return Ok(false);
+                        }
+                        if let Err(e) = writer.flush() {
+                            error!("Failed to flush stream: {}", e);
+                            return Ok(false);
+                        }
+                        Ok(true)
+                    }
+                    Err(e) => {
+                        error!("Serialization error: {}", e);
+                        Ok(false)
+                    }
+                }
+            }
+            Err(e) => {
+                error!("Failed to read file block for verify: {}", e);
+                let msg = SenderMessageV1::VerifyResponse(VerifyResponseV1 {
+                    file_hash: self.expected_hash,
+                    seq: *seq,
+                    valid: false,
+                });
+                if let Ok(payload) = msg.to_bytes(&mut self.write_buffer) {
+                    let packet = crate::transport::attach_headers(payload);
+                    let _ = writer.write_all(&packet);
+                }
+                Ok(false)
+            }
+        }
     }
 }
