@@ -79,6 +79,9 @@ pub enum SenderMessageV1<'a> {
 
     /// An error message sent from the sender to indicate a problem.
     Error(SenderErrorV1),
+
+    /// A response to a VerifyBlock request, indicating if the block checksum matches.
+    VerifyResponse(VerifyResponseV1),
 }
 
 impl<'a> SenderMessageV1<'a> {
@@ -123,6 +126,20 @@ pub struct ReceiverErrorV1 {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifyBlockV1 {
+    pub file_hash: [u8; 32],
+    pub seq: u32,
+    pub checksum: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerifyResponseV1 {
+    pub file_hash: [u8; 32],
+    pub seq: u32,
+    pub valid: bool,
+}
+
 /// Messages sent from the Receiver (the one receiving the file) to the Sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReceiverMessageV1 {
@@ -139,6 +156,9 @@ pub enum ReceiverMessageV1 {
 
     /// An error message sent from the receiver to indicate a problem.
     Error(ReceiverErrorV1),
+
+    /// A request to verify an existing block during resume.
+    VerifyBlock(VerifyBlockV1),
 }
 
 impl ReceiverMessageV1 {
@@ -284,6 +304,34 @@ mod tests {
         });
 
         let mut buffer = vec![0u8; (MAX_BLOCK_SIZE + 512) as usize]; // Large enough buffer for serialization
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = SenderMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_verify_block_serde() {
+        let msg = ReceiverMessageV1::VerifyBlock(VerifyBlockV1 {
+            file_hash: [0xCC; 32],
+            seq: 123,
+            checksum: 0xDEADBEEF,
+        });
+        let mut buffer = [0u8; 1024];
+        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
+        let decoded = ReceiverMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
+
+        assert_eq!(msg, decoded);
+    }
+
+    #[test]
+    fn test_verify_response_serde() {
+        let msg = SenderMessageV1::VerifyResponse(VerifyResponseV1 {
+            file_hash: [0xCC; 32],
+            seq: 123,
+            valid: true,
+        });
+        let mut buffer = [0u8; 1024];
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = SenderMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
 
