@@ -87,9 +87,9 @@ pub fn receive_file(
 
     let state = Arc::new(ReceiverState {
         file_hash,
-        total_size: handshake.total_size,
+        _total_size: handshake.total_size,
         block_size: handshake.block_size,
-        total_blocks,
+        _total_blocks: total_blocks,
         sender_addr,
         received_blocks,
         bytes_received: AtomicU64::new(0),
@@ -119,12 +119,11 @@ pub fn receive_file(
     Ok(())
 }
 
-#[allow(dead_code)]
 struct ReceiverState {
     file_hash: [u8; 32],
-    total_size: u64,
+    _total_size: u64,
     block_size: u32,
-    total_blocks: u32,
+    _total_blocks: u32,
     sender_addr: SocketAddr,
     received_blocks: Vec<AtomicBool>,
     bytes_received: AtomicU64,

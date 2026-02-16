@@ -25,8 +25,6 @@ use std::{
 const SEND_LISTEN_PORT: u16 = 7890;
 const POLL_SLEEP_MS: u64 = 500;
 
-// TODO: Remove this once the function starts being used
-#[allow(dead_code)]
 /// Sends a file to the specified address using the custom file transfer protocol.
 pub fn send_file(
     address: (&str, u16),

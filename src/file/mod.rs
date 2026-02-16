@@ -10,8 +10,6 @@ pub struct FileMetadata {
     hash: [u8; 32],
 }
 
-// TODO: Remove this once the functions start being used
-#[allow(dead_code)]
 impl FileMetadata {
     pub fn new(filename: String, filesize: u64, filehash: [u8; 32]) -> Self {
         Self {

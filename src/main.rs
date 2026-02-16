@@ -48,8 +48,6 @@ fn main() {
                 bind_address.0, bind_address.1, args.file, concurrency
             );
 
-            // TODO: Call actual receive logic here once implemented
-            // For now, we'll just print a message since the receive module is empty
             if let Err(e) = stream::receive::receive_file(bind_address, &args.file, concurrency) {
                 error!("Failed to receive file: {}", e);
                 std::process::exit(1);
