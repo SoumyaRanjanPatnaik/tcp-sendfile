@@ -137,7 +137,10 @@ pub fn receive_file(
     if is_file_integrity_ok {
         info!("File integrity verified successfully");
     } else {
-        panic!("File integrity verification failed");
+        return Err(SendFileError::IntegrityCheckFailed {
+            expected: expected_hash,
+            received: actual_hash,
+        });
     }
 
     let bytes_received = state.bytes_received.load(Ordering::SeqCst);

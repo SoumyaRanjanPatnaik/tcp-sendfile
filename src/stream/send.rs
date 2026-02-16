@@ -245,7 +245,7 @@ impl ConnectionHandler {
 
         if file_hash != &self.expected_hash {
             warn!("Received request for wrong file hash: {:?}", file_hash);
-            return Err(SendFileError::HashMismatch {
+            return Err(SendFileError::BlockHashMismatch {
                 expected: self.expected_hash,
                 received: file_hash.to_vec(),
             });
@@ -379,7 +379,7 @@ impl ConnectionHandler {
                 "Received progress response for wrong file hash: {:?}",
                 file_hash
             );
-            return Err(SendFileError::HashMismatch {
+            return Err(SendFileError::BlockHashMismatch {
                 expected: self.expected_hash,
                 received: file_hash.to_vec(),
             });
@@ -410,7 +410,7 @@ impl ConnectionHandler {
                 "Received transfer complete for wrong file hash: {:?}",
                 file_hash
             );
-            return Err(SendFileError::HashMismatch {
+            return Err(SendFileError::BlockHashMismatch {
                 expected: self.expected_hash,
                 received: file_hash.to_vec(),
             });
@@ -460,7 +460,7 @@ impl ConnectionHandler {
                 "Received verify request for wrong file hash: {:?}",
                 file_hash
             );
-            return Err(SendFileError::HashMismatch {
+            return Err(SendFileError::BlockHashMismatch {
                 expected: self.expected_hash,
                 received: file_hash.to_vec(),
             });

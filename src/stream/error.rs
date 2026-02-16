@@ -21,8 +21,8 @@ pub enum SendFileError {
     #[error("Unexpected message received: {received}, expected: {expected}")]
     UnexpectedMessage { received: String, expected: String },
     /// File hash mismatch.
-    #[error("File hash mismatch: expected {:?}, got {:?}", expected, received)]
-    HashMismatch {
+    #[error("Block hash mismatch: expected {:?}, got {:?}", expected, received)]
+    BlockHashMismatch {
         expected: [u8; 32],
         received: Vec<u8>,
     },
@@ -39,4 +39,10 @@ pub enum SendFileError {
     /// Connection failed.
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
+
+    #[error("Integrity check failed. Expected hash: {expected}, received hash: {received}")]
+    IntegrityCheckFailed {
+        expected: [u8; 32],
+        received: [u8; 32],
+    },
 }
