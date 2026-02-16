@@ -19,7 +19,7 @@ use log::{error, info, warn};
 use crate::{
     cli::TRANSFER_PORT,
     connection::read_next_payload,
-    file::utils::{read_file_block, write_file_block},
+    file::utils::{get_file_blake3_hash, read_file_block, write_file_block},
     stream::error::SendFileError,
     transport::{
         attach_headers, DataV1, ReceiverMessageV1, RequestV1, SenderMessageV1, TransferCompleteV1,
@@ -71,7 +71,7 @@ pub fn receive_file(
         }
     };
 
-    let file_hash: [u8; 32] = handshake.file_hash.try_into().map_err(|_| {
+    let expected_hash: [u8; 32] = handshake.file_hash.try_into().map_err(|_| {
         SendFileError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "Invalid file hash length",
@@ -102,14 +102,14 @@ pub fn receive_file(
         (0..total_blocks).map(|_| AtomicBool::new(false)).collect();
 
     let state = Arc::new(ReceiverState {
-        file_hash,
+        file_hash: expected_hash,
         _total_size: handshake.total_size,
         block_size: handshake.block_size,
         _total_blocks: total_blocks,
         sender_addr,
         received_blocks,
         bytes_received: AtomicU64::new(0),
-        file_path: final_path,
+        file_path: final_path.clone(),
         is_existing_file,
     });
 
@@ -125,6 +125,20 @@ pub fn receive_file(
             });
         }
     });
+
+    let actual_hash =
+        get_file_blake3_hash(&final_path).expect("Failed to compute file hash after transfer");
+
+    let is_file_integrity_ok = actual_hash
+        .iter()
+        .zip(expected_hash.iter())
+        .all(|(a, b)| a == b);
+
+    if is_file_integrity_ok {
+        info!("File integrity verified successfully");
+    } else {
+        panic!("File integrity verification failed");
+    }
 
     let bytes_received = state.bytes_received.load(Ordering::SeqCst);
     info!(
