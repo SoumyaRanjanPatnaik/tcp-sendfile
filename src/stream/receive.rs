@@ -70,8 +70,7 @@ pub fn receive_file(
     let final_path = determine_final_path(path, handshake.file_name);
     info!("Output file path: {:?}", final_path);
 
-    let total_blocks = ((handshake.total_size + handshake.block_size as u64 - 1)
-        / handshake.block_size as u64) as u32;
+    let total_blocks = handshake.total_size.div_ceil(handshake.block_size as u64) as u32;
 
     let is_existing_file = final_path.exists();
 

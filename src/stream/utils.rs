@@ -31,7 +31,7 @@ pub fn initialize_handshake(
     });
 
     let payload_bytes = handshake_message.to_bytes(transport_buffer)?;
-    let handshake_message = transport::attach_headers(&payload_bytes);
+    let handshake_message = transport::attach_headers(payload_bytes);
 
     debug!(
         "Serialized handshake message: {} bytes",

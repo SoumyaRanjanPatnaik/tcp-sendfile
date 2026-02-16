@@ -87,9 +87,7 @@ where
         total_bytes_read = previous_total + curr_bytes_read;
 
         // Check if the header delimiter is present in the newly read bytes
-        let test_crlf_from_idx = previous_total
-            .checked_sub(2 * MESSAGE_DELIMITER.len() - 1)
-            .unwrap_or(0);
+        let test_crlf_from_idx = previous_total.saturating_sub(2 * MESSAGE_DELIMITER.len() - 1);
         let header_end_index_opt = buffer[test_crlf_from_idx..total_bytes_read]
             .windows(2 * MESSAGE_DELIMITER.len())
             .position(|window| window == [MESSAGE_DELIMITER, MESSAGE_DELIMITER].concat())
@@ -131,11 +129,11 @@ where
         None
     };
 
-    return Ok(ReadPayloadResult {
+    Ok(ReadPayloadResult {
         message,
         total_bytes_read,
         next_payload_index,
-    });
+    })
 }
 
 /// Parses the headers from the provided header buffer and extracts the protocol
@@ -182,7 +180,7 @@ fn parse_header_line<ParsedValue: FromStr>(
         })?
         .parse::<ParsedValue>()
         .map_err(|_| StreamReadError::InvalidMessageFormat {
-            details: format!("Version header does not contain a valid number"),
+            details: "Version header does not contain a valid number".to_string(),
         })?;
 
     Ok(parsed_value)
