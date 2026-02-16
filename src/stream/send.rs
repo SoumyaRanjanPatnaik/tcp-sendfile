@@ -87,7 +87,7 @@ pub fn send_file(
 
                 active_connections.fetch_add(1, Ordering::SeqCst);
                 scope.spawn(move || {
-                    let success = handle_connection(
+                    let result = handle_connection(
                         stream,
                         &file_hash,
                         file_path,
@@ -95,7 +95,7 @@ pub fn send_file(
                         transfer_complete.clone(),
                     );
                     active_connections.fetch_sub(1, Ordering::SeqCst);
-                    if success {
+                    if result.is_ok() {
                         transfer_complete.store(true, Ordering::SeqCst);
                     }
                 });
@@ -115,7 +115,7 @@ fn handle_connection(
     file_path: &Path,
     block_size: u32,
     transfer_complete: Arc<AtomicBool>,
-) -> bool {
+) -> Result<(), SendFileError> {
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut filled_len = 0;
 
@@ -123,7 +123,7 @@ fn handle_connection(
         Ok(f) => f,
         Err(e) => {
             error!("Failed to open file: {}", e);
-            return false;
+            return Err(SendFileError::Io(e));
         }
     };
 
@@ -139,7 +139,7 @@ fn handle_connection(
     loop {
         if transfer_complete.load(Ordering::Relaxed) {
             info!("Transfer already marked complete, closing connection");
-            return true;
+            return Ok(());
         }
         match read_next_payload::<ReceiverMessageV1, _>(&mut stream, &mut buffer, filled_len) {
             Ok(result) => {
@@ -156,42 +156,29 @@ fn handle_connection(
 
                 match message {
                     ReceiverMessageV1::Request(req) => {
-                        match handler.handle_data_request(&req, &mut stream) {
-                            Ok(true) => {} // Continue
-                            Ok(false) => return false,
-                            Err(e) => {
-                                error!("Request handling error: {}", e);
-                                return false;
-                            }
-                        }
+                        handler.handle_data_request(&req, &mut stream)?;
                     }
                     ReceiverMessageV1::Progress(prog) => {
-                        if !handler.handle_progress(&prog) {
-                            return false;
-                        }
+                        handler.handle_progress(&prog)?;
                     }
                     ReceiverMessageV1::TransferComplete(complete) => {
                         return handler.handle_transfer_complete(&complete);
                     }
                     ReceiverMessageV1::Error(err) => {
                         handler.handle_error(&err);
-                        return false;
+                        return Err(SendFileError::ConnectionFailed(format!(
+                            "Receiver error {}: {}",
+                            err.code, err.message
+                        )));
                     }
                     ReceiverMessageV1::VerifyBlock(verify) => {
-                        match handler.handle_verify_block(&verify, &mut stream) {
-                            Ok(true) => {}
-                            Ok(false) => return false,
-                            Err(e) => {
-                                error!("Verify block handling error: {}", e);
-                                return false;
-                            }
-                        }
+                        handler.handle_verify_block(&verify, &mut stream)?;
                     }
                 }
             }
             Err(e) => {
                 warn!("Connection error: {}", e);
-                return false;
+                return Err(SendFileError::Stream(e));
             }
         }
     }
@@ -236,12 +223,15 @@ impl ConnectionHandler {
         &mut self,
         req: &RequestV1,
         writer: &mut W,
-    ) -> Result<bool, SendFileError> {
+    ) -> Result<(), SendFileError> {
         let RequestV1 { seq, file_hash } = req;
 
         if file_hash != &self.expected_hash {
             warn!("Received request for wrong file hash: {:?}", file_hash);
-            return Ok(false);
+            return Err(SendFileError::HashMismatch {
+                expected: self.expected_hash,
+                received: file_hash.to_vec(),
+            });
         }
         info!("Received request for seq {}", seq);
 
@@ -313,17 +303,23 @@ impl ConnectionHandler {
                         let packet = crate::transport::attach_headers(payload);
                         if let Err(e) = writer.write_all(&packet) {
                             error!("Failed to write data to stream: {}", e);
-                            return Ok(false);
+                            return Err(SendFileError::ConnectionFailed(format!(
+                                "Failed to write data: {}",
+                                e
+                            )));
                         }
                         if let Err(e) = writer.flush() {
                             error!("Failed to flush stream: {}", e);
-                            return Ok(false);
+                            return Err(SendFileError::ConnectionFailed(format!(
+                                "Failed to flush: {}",
+                                e
+                            )));
                         }
-                        Ok(true)
+                        Ok(())
                     }
                     Err(e) => {
                         error!("Serialization error: {}", e);
-                        Ok(false)
+                        Err(SendFileError::Transport(e))
                     }
                 }
             }
@@ -338,7 +334,7 @@ impl ConnectionHandler {
                     let packet = crate::transport::attach_headers(payload);
                     let _ = writer.write_all(&packet);
                 }
-                Ok(false)
+                Err(SendFileError::Io(e))
             }
         }
     }
@@ -353,8 +349,8 @@ impl ConnectionHandler {
     ///
     /// # Returns
     ///
-    /// `true` if the progress update corresponds to the expected file hash, `false` otherwise.
-    pub fn handle_progress(&mut self, prog: &ProgressV1) -> bool {
+    /// `Ok(())` if the progress update corresponds to the expected file hash, `Err` otherwise.
+    pub fn handle_progress(&mut self, prog: &ProgressV1) -> Result<(), SendFileError> {
         let ProgressV1 {
             file_hash,
             bytes_received,
@@ -365,10 +361,13 @@ impl ConnectionHandler {
                 "Received progress response for wrong file hash: {:?}",
                 file_hash
             );
-            return false;
+            return Err(SendFileError::HashMismatch {
+                expected: self.expected_hash,
+                received: file_hash.to_vec(),
+            });
         }
         info!("Progress: {} bytes", bytes_received);
-        true
+        Ok(())
     }
 
     /// Handles a transfer complete message.
@@ -381,8 +380,11 @@ impl ConnectionHandler {
     ///
     /// # Returns
     ///
-    /// `true` if the completion message corresponds to the expected file hash, `false` otherwise.
-    pub fn handle_transfer_complete(&mut self, complete: &TransferCompleteV1) -> bool {
+    /// `Ok(())` if the completion message corresponds to the expected file hash, `Err` otherwise.
+    pub fn handle_transfer_complete(
+        &mut self,
+        complete: &TransferCompleteV1,
+    ) -> Result<(), SendFileError> {
         let TransferCompleteV1 { file_hash } = complete;
 
         if file_hash != &self.expected_hash {
@@ -390,10 +392,13 @@ impl ConnectionHandler {
                 "Received transfer complete for wrong file hash: {:?}",
                 file_hash
             );
-            return false;
+            return Err(SendFileError::HashMismatch {
+                expected: self.expected_hash,
+                received: file_hash.to_vec(),
+            });
         }
         info!("File transfer successful");
-        true
+        Ok(())
     }
 
     /// Handles an error message from the receiver.
@@ -420,13 +425,12 @@ impl ConnectionHandler {
     ///
     /// # Returns
     ///
-    /// `Ok(true)` if successful, `Ok(false)` if the request was invalid (wrong file hash) or an error occurred,
-    /// or `Err` if a critical error occurred.
+    /// `Ok(())` if successful, `Err` if the request was invalid (wrong file hash) or an error occurred.
     pub fn handle_verify_block<W: Write>(
         &mut self,
         verify: &VerifyBlockV1,
         writer: &mut W,
-    ) -> Result<bool, SendFileError> {
+    ) -> Result<(), SendFileError> {
         let VerifyBlockV1 {
             file_hash,
             seq,
@@ -438,7 +442,10 @@ impl ConnectionHandler {
                 "Received verify request for wrong file hash: {:?}",
                 file_hash
             );
-            return Ok(false);
+            return Err(SendFileError::HashMismatch {
+                expected: self.expected_hash,
+                received: file_hash.to_vec(),
+            });
         }
         info!("Received verify request for seq {}", seq);
 
@@ -463,17 +470,23 @@ impl ConnectionHandler {
                         let packet = crate::transport::attach_headers(payload);
                         if let Err(e) = writer.write_all(&packet) {
                             error!("Failed to write verify response to stream: {}", e);
-                            return Ok(false);
+                            return Err(SendFileError::ConnectionFailed(format!(
+                                "Failed to write verify response: {}",
+                                e
+                            )));
                         }
                         if let Err(e) = writer.flush() {
                             error!("Failed to flush stream: {}", e);
-                            return Ok(false);
+                            return Err(SendFileError::ConnectionFailed(format!(
+                                "Failed to flush: {}",
+                                e
+                            )));
                         }
-                        Ok(true)
+                        Ok(())
                     }
                     Err(e) => {
                         error!("Serialization error: {}", e);
-                        Ok(false)
+                        Err(SendFileError::Transport(e))
                     }
                 }
             }
@@ -488,7 +501,7 @@ impl ConnectionHandler {
                     let packet = crate::transport::attach_headers(payload);
                     let _ = writer.write_all(&packet);
                 }
-                Ok(false)
+                Err(SendFileError::Io(e))
             }
         }
     }

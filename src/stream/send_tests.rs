@@ -64,10 +64,12 @@ fn test_handle_data_request_compression_probe_positive() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler
-        .handle_data_request(&req, &mut cursor)
-        .expect("handle_data_request failed");
-    assert!(result, "Should return true to continue");
+    let result = handler.handle_data_request(&req, &mut cursor);
+    assert!(
+        result.is_ok(),
+        "handle_data_request should succeed: {:?}",
+        result.err()
+    );
 
     // Check compression enabled
     assert_eq!(handler.compression_enabled, Some(true));
@@ -117,10 +119,12 @@ fn test_handle_data_request_compression_probe_negative() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler
-        .handle_data_request(&req, &mut cursor)
-        .expect("handle_data_request failed");
-    assert!(result);
+    let result = handler.handle_data_request(&req, &mut cursor);
+    assert!(
+        result.is_ok(),
+        "handle_data_request should succeed: {:?}",
+        result.err()
+    );
 
     assert_eq!(handler.compression_enabled, Some(false));
 
@@ -199,11 +203,9 @@ fn test_handle_data_request_mismatched_hash() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler
-        .handle_data_request(&req, &mut cursor)
-        .expect("handle_data_request failed");
+    let result = handler.handle_data_request(&req, &mut cursor);
 
-    assert_eq!(result, false, "Should return false to stop connection");
+    assert!(result.is_err(), "Should return error for mismatched hash");
     assert!(cursor.into_inner().is_empty(), "Should not write anything");
 
     let _ = std::fs::remove_file(path);
@@ -231,11 +233,12 @@ fn test_handle_data_request_eof_handling() {
     };
     let mut cursor = Cursor::new(Vec::new());
 
-    let result = handler
-        .handle_data_request(&req, &mut cursor)
-        .expect("handle_data_request failed");
-
-    assert!(result, "Should return true");
+    let result = handler.handle_data_request(&req, &mut cursor);
+    assert!(
+        result.is_ok(),
+        "handle_data_request should succeed: {:?}",
+        result.err()
+    );
 
     let written = cursor.into_inner();
     let msg = parse_message(&written);
@@ -269,7 +272,7 @@ fn test_handle_progress_valid_hash() {
         file_hash: hash,
         bytes_received: 10,
     };
-    assert!(handler.handle_progress(&prog));
+    assert!(handler.handle_progress(&prog).is_ok());
 
     let _ = std::fs::remove_file(path);
 }
@@ -294,7 +297,7 @@ fn test_handle_progress_invalid_hash() {
         file_hash: wrong_hash,
         bytes_received: 10,
     };
-    assert!(!handler.handle_progress(&prog));
+    assert!(handler.handle_progress(&prog).is_err());
 
     let _ = std::fs::remove_file(path);
 }
@@ -315,7 +318,7 @@ fn test_handle_transfer_complete_success() {
     };
 
     let complete = TransferCompleteV1 { file_hash: hash };
-    assert!(handler.handle_transfer_complete(&complete));
+    assert!(handler.handle_transfer_complete(&complete).is_ok());
 
     let _ = std::fs::remove_file(path);
 }

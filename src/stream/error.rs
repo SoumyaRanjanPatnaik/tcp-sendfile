@@ -20,4 +20,23 @@ pub enum SendFileError {
     /// Received an unexpected message type.
     #[error("Unexpected message received: {received}, expected: {expected}")]
     UnexpectedMessage { received: String, expected: String },
+    /// File hash mismatch.
+    #[error("File hash mismatch: expected {:?}, got {:?}", expected, received)]
+    HashMismatch {
+        expected: [u8; 32],
+        received: Vec<u8>,
+    },
+    /// Checksum mismatch for a data block.
+    #[error("Checksum mismatch for block {seq}: expected {expected}, got {computed}")]
+    ChecksumMismatch {
+        seq: u32,
+        expected: u32,
+        computed: u32,
+    },
+    /// Invalid request received.
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+    /// Connection failed.
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
 }

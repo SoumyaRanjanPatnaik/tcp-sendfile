@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-const MAX_RETRIES: u32 = 5;
+const MAX_RETRIES: u32 = 3;
 const INITIAL_RETRY_DELAY_MS: u64 = 500;
 
 /// Starts receiving a file on the specified address.
@@ -187,6 +187,8 @@ fn run_connection(
 
     if is_transfer_complete(&state) {
         send_transfer_complete(&mut stream, &state)?;
+    } else {
+        error!("Connection closed unexpectedly");
     }
 
     Ok(())
@@ -240,6 +242,7 @@ fn verify_existing_blocks(
             info!("Block {} verified successfully", seq);
         } else {
             info!("Block {} verification failed, will re-download", seq);
+            request_and_download_block(stream, state, seq, &mut buffer)?;
         }
     }
 
@@ -298,56 +301,53 @@ fn download_missing_blocks(
     range_end: u32,
 ) -> Result<(), SendFileError> {
     let mut current_seq = range_start;
+    let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
 
-    while current_seq < range_end {
-        while current_seq < range_end
-            && state.received_blocks[current_seq as usize].load(Ordering::SeqCst)
-        {
-            current_seq += 1;
-        }
-
-        if current_seq >= range_end {
-            break;
+    for seq in range_start..range_end {
+        if state.received_blocks[seq as usize].load(Ordering::SeqCst) {
+            continue;
         }
 
         let mut retry_count = 0u32;
         let mut retry_delay = INITIAL_RETRY_DELAY_MS;
 
         loop {
-            let success = download_block_with_retry(stream, state, current_seq)?;
+            match request_and_download_block(stream, state, seq, &mut buffer) {
+                Ok(()) => {
+                    state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
+                    current_seq += 1;
+                    break;
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= MAX_RETRIES {
+                        error!(
+                            "Max retries ({}) exceeded for block {}: {}",
+                            MAX_RETRIES, current_seq, e
+                        );
+                        return Err(SendFileError::Io(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            format!("Max retries exceeded for block {}", current_seq),
+                        )));
+                    }
 
-            if success {
-                state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
-                current_seq += 1;
-                break;
+                    error!("Had to retry: {}", e);
+                    retry_delay *= 2;
+                    thread::sleep(Duration::from_millis(retry_delay));
+                }
             }
-
-            retry_count += 1;
-            if retry_count >= MAX_RETRIES {
-                error!(
-                    "Max retries ({}) exceeded for block {}",
-                    MAX_RETRIES, current_seq
-                );
-                return Err(SendFileError::Io(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    format!("Max retries exceeded for block {}", current_seq),
-                )));
-            }
-
-            retry_delay *= 2;
-            thread::sleep(Duration::from_millis(retry_delay));
         }
     }
 
     Ok(())
 }
 
-fn download_block_with_retry(
+fn request_and_download_block(
     stream: &mut TcpStream,
     state: &ReceiverState,
     seq: u32,
-) -> Result<bool, SendFileError> {
-    let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
+    buffer: &mut [u8],
+) -> Result<(), SendFileError> {
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
 
     let msg = ReceiverMessageV1::Request(RequestV1 {
@@ -357,14 +357,21 @@ fn download_block_with_retry(
 
     if let Err(e) = send_message(stream, &msg, &mut write_buffer) {
         warn!("Failed to send request for block {}: {}", seq, e);
-        return Ok(false);
+        return Err(SendFileError::ConnectionFailed(format!(
+            "Failed to send request for block {}: {}",
+            seq, e
+        )));
     }
+    stream.flush()?;
 
-    let result = match read_next_payload::<SenderMessageV1, _>(stream, &mut buffer, 0) {
+    let result = match read_next_payload::<SenderMessageV1, _>(stream, buffer, 0) {
         Ok(r) => r,
         Err(e) => {
             warn!("Failed to read response for block {}: {}", seq, e);
-            return Ok(false);
+            return Err(SendFileError::ConnectionFailed(format!(
+                "Failed to read response for block {}: {}",
+                seq, e
+            )));
         }
     };
 
@@ -375,11 +382,17 @@ fn download_block_with_retry(
                 "Sender error for block {}: {} - {}",
                 seq, err.code, err.message
             );
-            Ok(false)
+            Err(SendFileError::ConnectionFailed(format!(
+                "Sender error {}: {}",
+                err.code, err.message
+            )))
         }
         _ => {
             warn!("Unexpected message type for block {}", seq);
-            Ok(false)
+            Err(SendFileError::UnexpectedMessage {
+                received: format!("{:?}", result.message),
+                expected: "Data".to_string(),
+            })
         }
     }
 }
@@ -389,14 +402,18 @@ fn process_data_block(
     seq: u32,
     data: DataV1,
     write_buffer: &mut [u8],
-) -> Result<bool, SendFileError> {
+) -> Result<(), SendFileError> {
     let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, data.data) as u32;
     if computed_checksum != data.checksum {
         warn!(
             "Checksum mismatch for block {}: expected {}, got {}",
             seq, data.checksum, computed_checksum
         );
-        return Ok(false);
+        return Err(SendFileError::ChecksumMismatch {
+            seq,
+            expected: data.checksum,
+            computed: computed_checksum,
+        });
     }
 
     let block_data = if data.compressed {
@@ -404,7 +421,7 @@ fn process_data_block(
             Ok(d) => d,
             Err(e) => {
                 warn!("Failed to decompress block {}: {}", seq, e);
-                return Ok(false);
+                return Err(SendFileError::Io(e));
             }
         }
     } else {
@@ -418,7 +435,7 @@ fn process_data_block(
 
     if let Err(e) = write_file_block(&mut file, seq, state.block_size, &block_data) {
         warn!("Failed to write block {}: {}", seq, e);
-        return Ok(false);
+        return Err(SendFileError::Io(e));
     }
 
     state
@@ -426,7 +443,7 @@ fn process_data_block(
         .fetch_add(block_data.len() as u64, Ordering::SeqCst);
 
     let _ = write_buffer;
-    Ok(true)
+    Ok(())
 }
 
 fn decompress_gzip(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
@@ -444,7 +461,6 @@ fn send_message<W: Write>(
     let payload = msg.to_bytes(buffer)?;
     let packet = attach_headers(payload);
     stream.write_all(&packet)?;
-    stream.flush()?;
     Ok(())
 }
 
@@ -557,7 +573,6 @@ mod tests {
             "process_data_block failed: {:?}",
             result.err()
         );
-        assert!(result.unwrap());
 
         // Cleanup
         let _ = std::fs::remove_file(file_path);
