@@ -10,6 +10,8 @@ pub enum SendFileError {
     Transport(#[from] TransportError),
     #[error("Invalid address format: {0}")]
     InvalidAddress(#[from] std::net::AddrParseError),
-    #[error("Erorr when trying to read from TCP stream: {0}")]
+    #[error("Error when trying to read from TCP stream: {0}")]
     Stream(#[from] StreamReadError),
+    #[error("Unexpected message received: {received}, expected: {expected}")]
+    UnexpectedMessage { received: String, expected: String },
 }

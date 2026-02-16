@@ -48,10 +48,10 @@ pub fn receive_file(
     let handshake = match result.message {
         SenderMessageV1::Handshake(h) => h,
         _ => {
-            return Err(SendFileError::Io(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Expected handshake message",
-            )));
+            return Err(SendFileError::UnexpectedMessage {
+                received: format!("{:?}", result.message),
+                expected: String::from("Handshake"),
+            });
         }
     };
 
@@ -459,4 +459,30 @@ fn send_transfer_complete(state: &ReceiverState) -> Result<(), SendFileError> {
 
     info!("Sent TransferComplete for file {:?}", state.file_path);
     Ok(())
+}
+
+#[cfg(test)]
+pub fn split_blocks_into_ranges_for_test(
+    total_blocks: u32,
+    concurrency: u16,
+) -> Vec<std::ops::Range<u32>> {
+    split_blocks_into_ranges(total_blocks, concurrency)
+}
+
+#[cfg(test)]
+pub fn decompress_gzip_for_test(data: &[u8]) -> Result<Vec<u8>, std::io::Error> {
+    decompress_gzip(data)
+}
+
+#[cfg(test)]
+pub fn determine_final_path_for_test(output_path: &std::path::Path, file_name: &str) -> PathBuf {
+    determine_final_path(output_path, file_name)
+}
+
+#[cfg(test)]
+pub fn is_transfer_complete_for_test(received_blocks: &[bool], total_blocks: u32) -> bool {
+    received_blocks
+        .iter()
+        .take(total_blocks as usize)
+        .all(|&b| b)
 }
