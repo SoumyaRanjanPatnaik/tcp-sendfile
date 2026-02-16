@@ -24,6 +24,7 @@ use std::{
 };
 
 const POLL_SLEEP_MS: u64 = 500;
+const INACTIVITY_TIMEOUT_SECS: u64 = 15;
 
 /// Sends a file to the specified address using the custom file transfer protocol.
 pub fn send_file(
@@ -52,10 +53,25 @@ pub fn send_file(
 
     let active_connections = Arc::new(AtomicUsize::new(0));
     let transfer_complete = Arc::new(AtomicBool::new(false));
+    let mut inativity_start: Option<std::time::Instant> = None;
 
     thread::scope(|scope| loop {
         if transfer_complete.load(Ordering::Relaxed) {
             break;
+        }
+
+        if active_connections.load(Ordering::Relaxed) == 0 {
+            if let Some(start) = inativity_start {
+                if start.elapsed().as_secs() >= INACTIVITY_TIMEOUT_SECS {
+                    error!("No active connections for 15 seconds, shutting down sender");
+                    break;
+                }
+            } else {
+                warn!("No active connections, waiting for incoming connections...");
+                inativity_start.replace(std::time::Instant::now());
+            }
+        } else {
+            inativity_start.take();
         }
 
         match listener.accept() {
@@ -78,8 +94,7 @@ pub fn send_file(
                     }
                 });
             }
-            Err(e) => {
-                error!("Listener accept error: {}", e);
+            Err(_) => {
                 thread::sleep(std::time::Duration::from_millis(POLL_SLEEP_MS));
             }
         }
