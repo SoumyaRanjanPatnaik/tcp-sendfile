@@ -11,20 +11,26 @@ use crate::transport::{
 use log::debug;
 use serde::Deserialize;
 
+/// Errors that can occur when reading from a stream.
 #[derive(thiserror::Error, Debug)]
 pub enum StreamReadError {
+    /// An I/O error occurred.
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    /// The provided buffer was too small to hold the message.
     #[error("Provided buffer is smaller than the requested number of bytes to read (needed at least {min_expected} bytes)")]
     BufferSmallerThanExpected { min_expected: usize },
 
+    /// The message format was invalid (e.g. missing headers, invalid UTF-8).
     #[error("Message format is invalid: {details}")]
     InvalidMessageFormat { details: String },
 
+    /// The protocol version is not supported.
     #[error("Unsupported protocol version: found {found}, expected {expected}")]
     UnsupportedProtocolVersion { found: u8, expected: u8 },
 
+    /// Failed to deserialize the message payload.
     #[error("Failed to parse message payload: {0}")]
     PayloadParseError(#[from] postcard::Error),
 }

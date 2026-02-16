@@ -29,6 +29,21 @@ use crate::{
 const MAX_RETRIES: u32 = 5;
 const INITIAL_RETRY_DELAY_MS: u64 = 500;
 
+/// Starts receiving a file on the specified address.
+///
+/// This function binds to the given address and listens for incoming connections.
+/// It handles the initial handshake and then spawns multiple threads to download
+/// file blocks concurrently.
+///
+/// # Arguments
+///
+/// * `bind_addr` - The address and port to bind to (e.g., ("0.0.0.0", 7878)).
+/// * `path` - The output path where the received file will be saved.
+/// * `concurrency` - The number of concurrent connections to accept.
+///
+/// # Returns
+///
+/// A `Result` indicating success or a `SendFileError`.
 pub fn receive_file(
     bind_addr: (&str, u16),
     path: &std::path::Path,

@@ -3,31 +3,47 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// The current version of the file transfer protocol.
 pub const CURRENT_PROTOCOL_VERSION: u8 = 1;
+/// The maximum size of a file block (4 MB).
 pub const MAX_BLOCK_SIZE: u32 = 4 * 1024 * 1024; // 4 MB
+/// The maximum size of a message, including overhead for headers and metadata.
 pub const MAX_MESSAGE_SIZE: usize = MAX_BLOCK_SIZE as usize + 128; // Max block size plus some overhead for headers and metadata
 
+/// The string prefix for the version header.
 pub const VERSION_HEADER_PREFIX_STR: &str = "Ver: ";
+/// The string prefix for the length header.
 pub const LENGTH_HEADER_PREFIX_STR: &str = "Len: ";
+/// The byte slice prefix for the version header.
 pub const VERSION_HEADER_PRIFIX: &[u8] = VERSION_HEADER_PREFIX_STR.as_bytes();
+/// The byte slice prefix for the length header.
 pub const LENGTH_HEADER_PREFIX: &[u8] = LENGTH_HEADER_PREFIX_STR.as_bytes();
 
+/// The string delimiter for messages (CRLF).
 pub const MESSAGE_DELIMITER_STR: &str = "\r\n";
+/// The byte slice delimiter for messages (CRLF).
 pub const MESSAGE_DELIMITER: &[u8] = MESSAGE_DELIMITER_STR.as_bytes();
 
+/// Errors that can occur in the transport layer.
 #[derive(Error, Debug)]
 pub enum TransportError {
+    /// Serialization or deserialization failed.
     #[error("Serialization error: {0}")]
     Serialization(#[from] postcard::Error),
+    /// An I/O error occurred.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
 
+/// A serialized message ready to be sent.
 pub struct SerializedMessage {
+    /// The length of the payload.
     pub length: usize,
+    /// The message payload.
     pub payload: &'static [u8],
 }
 
+/// Handshake message sent by the sender to initiate a transfer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandshakeV1<'a> {
     /// BLAKE3 hash of the file being transferred, used for integrity verification,
@@ -48,6 +64,7 @@ pub struct HandshakeV1<'a> {
     pub block_size: u32,
 }
 
+/// Data chunk message sent by the sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataV1<'a> {
     /// Sequence number of the chunk being sent, used for tracking which chunks have been sent and received.
@@ -62,9 +79,12 @@ pub struct DataV1<'a> {
     pub data: &'a [u8],
 }
 
+/// Error message sent by the sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SenderErrorV1 {
+    /// Error code.
     pub code: u16,
+    /// Error message.
     pub message: String,
 }
 
@@ -97,6 +117,7 @@ impl<'a> SenderMessageV1<'a> {
     }
 }
 
+/// Request message sent by the receiver to request a data chunk.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestV1 {
     /// BLAKE3 hash of the file being requested.
@@ -107,6 +128,7 @@ pub struct RequestV1 {
     pub seq: u32,
 }
 
+/// Progress update message sent by the receiver.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgressV1 {
     /// BLAKE3 hash of the file being tracked.
@@ -114,29 +136,41 @@ pub struct ProgressV1 {
     pub bytes_received: u64,
 }
 
+/// Message sent by the receiver when the transfer is complete.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransferCompleteV1 {
     /// BLAKE3 hash of the file that was completed.
     pub file_hash: [u8; 32],
 }
 
+/// Error message sent by the receiver.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReceiverErrorV1 {
+    /// Error code.
     pub code: u16,
+    /// Error message.
     pub message: String,
 }
 
+/// Request to verify a block's checksum, sent by the receiver (e.g. during resume).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifyBlockV1 {
+    /// BLAKE3 hash of the file.
     pub file_hash: [u8; 32],
+    /// Sequence number of the block to verify.
     pub seq: u32,
+    /// Checksum calculated by the receiver.
     pub checksum: u32,
 }
 
+/// Response to a VerifyBlock request, sent by the sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifyResponseV1 {
+    /// BLAKE3 hash of the file.
     pub file_hash: [u8; 32],
+    /// Sequence number of the block.
     pub seq: u32,
+    /// Whether the checksum matched.
     pub valid: bool,
 }
 
@@ -174,6 +208,17 @@ impl ReceiverMessageV1 {
     }
 }
 
+/// Attaches the protocol headers (Version and Length) to the payload.
+///
+/// This function constructs a new byte buffer containing the headers followed by the payload.
+///
+/// # Arguments
+///
+/// * `payload` - The serialized message payload.
+///
+/// # Returns
+///
+/// A `Box<[u8]>` containing the full message with headers.
 pub fn attach_headers(payload: &[u8]) -> Box<[u8]> {
     let mut message = Vec::with_capacity(64 + payload.len());
     message.extend_from_slice(

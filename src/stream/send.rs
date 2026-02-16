@@ -186,16 +186,41 @@ fn handle_connection(
     }
 }
 
+/// Handler for a single connection from a receiver.
+///
+/// Manages the state and logic for processing messages from a receiver,
+/// including handling data requests, progress updates, and verification requests.
 pub struct ConnectionHandler {
+    /// Handle to the file being transferred.
     pub file: File,
+    /// Expected BLAKE3 hash of the file, used for validation.
     pub expected_hash: [u8; 32],
+    /// Size of each data block.
     pub block_size: u32,
+    /// Whether compression is enabled for this connection.
+    /// `None` indicates that the decision hasn't been made yet (probing).
     pub compression_enabled: Option<bool>,
+    /// Buffer for writing outgoing messages.
     pub write_buffer: Vec<u8>,
+    /// Buffer for compressing data blocks.
     pub compressed_buffer: Vec<u8>,
 }
 
 impl ConnectionHandler {
+    /// Handles a request for a data block.
+    ///
+    /// Reads the requested block from the file, optionally compresses it,
+    /// calculates the checksum, and sends the data back to the requester.
+    ///
+    /// # Arguments
+    ///
+    /// * `req` - The data request message.
+    /// * `writer` - The writer to send the response to.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if successful, `Ok(false)` if the request was invalid or an error occurred that should close the connection,
+    /// or `Err` if a critical error occurred.
     pub fn handle_data_request<W: Write>(
         &mut self,
         req: &RequestV1,
@@ -307,6 +332,17 @@ impl ConnectionHandler {
         }
     }
 
+    /// Handles a progress update message.
+    ///
+    /// Logs the progress of the file transfer.
+    ///
+    /// # Arguments
+    ///
+    /// * `prog` - The progress message.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the progress update corresponds to the expected file hash, `false` otherwise.
     pub fn handle_progress(&mut self, prog: &ProgressV1) -> bool {
         let ProgressV1 {
             file_hash,
@@ -324,6 +360,17 @@ impl ConnectionHandler {
         true
     }
 
+    /// Handles a transfer complete message.
+    ///
+    /// Logs that the file transfer has completed successfully.
+    ///
+    /// # Arguments
+    ///
+    /// * `complete` - The transfer complete message.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the completion message corresponds to the expected file hash, `false` otherwise.
     pub fn handle_transfer_complete(&mut self, complete: &TransferCompleteV1) -> bool {
         let TransferCompleteV1 { file_hash } = complete;
 
@@ -338,11 +385,32 @@ impl ConnectionHandler {
         true
     }
 
+    /// Handles an error message from the receiver.
+    ///
+    /// Logs the error code and message.
+    ///
+    /// # Arguments
+    ///
+    /// * `err` - The receiver error message.
     pub fn handle_error(&mut self, err: &ReceiverErrorV1) {
         let ReceiverErrorV1 { code, message } = err;
         error!("Receiver error {}: {}", code, message);
     }
 
+    /// Handles a request to verify a block.
+    ///
+    /// Reads the specified block, calculates its checksum, and sends a response indicating whether
+    /// the checksum matches the one provided by the receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `verify` - The verify block request message.
+    /// * `writer` - The writer to send the response to.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if successful, `Ok(false)` if the request was invalid (wrong file hash) or an error occurred,
+    /// or `Err` if a critical error occurred.
     pub fn handle_verify_block<W: Write>(
         &mut self,
         verify: &VerifyBlockV1,

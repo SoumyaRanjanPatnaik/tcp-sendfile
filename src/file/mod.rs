@@ -13,6 +13,7 @@ pub struct FileMetadata {
 }
 
 impl FileMetadata {
+    /// Creates a new `FileMetadata` instance.
     pub fn new(filename: String, filesize: u64, filehash: [u8; 32]) -> Self {
         Self {
             name: filename,
@@ -21,6 +22,17 @@ impl FileMetadata {
         }
     }
 
+    /// Creates a `FileMetadata` instance from a file path.
+    ///
+    /// This function reads the file metadata to get the size and calculates the BLAKE3 hash of the file content.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to the file.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `FileMetadata` or an `io::Error`.
     pub fn from_file(path: &std::path::Path) -> std::io::Result<Self> {
         let filename = path
             .file_name()
@@ -42,14 +54,17 @@ impl FileMetadata {
         })
     }
 
+    /// Returns the name of the file.
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    /// Returns the size of the file in bytes.
     pub fn size(&self) -> u64 {
         self.size
     }
 
+    /// Returns the BLAKE3 hash of the file.
     pub fn hash(&self) -> [u8; 32] {
         self.hash
     }
