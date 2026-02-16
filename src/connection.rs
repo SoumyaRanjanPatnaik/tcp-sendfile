@@ -17,6 +17,10 @@ pub enum StreamReadError {
     #[error("IO error: {0}")]
     Io(#[from] io::Error),
 
+    /// Unexpected EOF: connection closed by peer while reading.
+    #[error("Unexpected EOF: connection closed by peer while reading")]
+    UnexpectedEof,
+
     /// The provided buffer was too small to hold the message.
     #[error("Provided buffer is smaller than the requested number of bytes to read (needed at least {min_expected} bytes)")]
     BufferSmallerThanExpected { min_expected: usize },
@@ -90,6 +94,9 @@ where
         }
 
         let curr_bytes_read = stream.read(&mut buffer[total_bytes_read..])?;
+        if curr_bytes_read == 0 {
+            return Err(StreamReadError::UnexpectedEof);
+        }
         let previous_total = total_bytes_read;
         total_bytes_read = previous_total + curr_bytes_read;
 
