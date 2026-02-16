@@ -87,7 +87,13 @@ pub fn send_file(
 
                 active_connections.fetch_add(1, Ordering::SeqCst);
                 scope.spawn(move || {
-                    let success = handle_connection(stream, &file_hash, file_path, block_size);
+                    let success = handle_connection(
+                        stream,
+                        &file_hash,
+                        file_path,
+                        block_size,
+                        transfer_complete.clone(),
+                    );
                     active_connections.fetch_sub(1, Ordering::SeqCst);
                     if success {
                         transfer_complete.store(true, Ordering::SeqCst);
@@ -108,6 +114,7 @@ fn handle_connection(
     expected_hash: &[u8; 32],
     file_path: &Path,
     block_size: u32,
+    transfer_complete: Arc<AtomicBool>,
 ) -> bool {
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut filled_len = 0;
@@ -130,6 +137,10 @@ fn handle_connection(
     };
 
     loop {
+        if transfer_complete.load(Ordering::Relaxed) {
+            info!("Transfer already marked complete, closing connection");
+            return true;
+        }
         match read_next_payload::<ReceiverMessageV1, _>(&mut stream, &mut buffer, filled_len) {
             Ok(result) => {
                 let message = result.message;
