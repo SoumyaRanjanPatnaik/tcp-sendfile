@@ -82,6 +82,14 @@ pub fn send_file(
                     continue;
                 }
 
+                if let Err(e) = stream.set_nonblocking(false) {
+                    warn!(
+                        "Failed to set stream to blocking mode, dropping connection: {}",
+                        e
+                    );
+                    continue;
+                }
+
                 let active_connections = active_connections.clone();
                 let transfer_complete = transfer_complete.clone();
 
