@@ -243,7 +243,7 @@ fn verify_existing_blocks(
             info!("Block {} verified successfully", seq);
         } else {
             info!("Block {} verification failed, will re-download", seq);
-            request_and_download_block(stream, state, seq, &mut buffer)?;
+            request_and_download_block(stream, state, seq, &mut buffer, &mut file)?;
         }
     }
 
@@ -303,6 +303,10 @@ fn download_missing_blocks(
 ) -> Result<(), SendFileError> {
     let mut current_seq = range_start;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&state.file_path)?;
 
     for seq in range_start..range_end {
         if state.received_blocks[seq as usize].load(Ordering::SeqCst) {
@@ -313,7 +317,7 @@ fn download_missing_blocks(
         let mut retry_delay = INITIAL_RETRY_DELAY_MS;
 
         loop {
-            match request_and_download_block(stream, state, seq, &mut buffer) {
+            match request_and_download_block(stream, state, seq, &mut buffer, &mut file) {
                 Ok(()) => {
                     state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
                     current_seq += 1;
@@ -348,6 +352,7 @@ fn request_and_download_block(
     state: &ReceiverState,
     seq: u32,
     buffer: &mut [u8],
+    file: &mut std::fs::File,
 ) -> Result<(), SendFileError> {
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
 
@@ -377,7 +382,9 @@ fn request_and_download_block(
     };
 
     match result.message {
-        SenderMessageV1::Data(data) => process_data_block(state, seq, data, &mut write_buffer),
+        SenderMessageV1::Data(data) => {
+            process_data_block(state, seq, data, &mut write_buffer, file)
+        }
         SenderMessageV1::Error(err) => {
             error!(
                 "Sender error for block {}: {} - {}",
@@ -403,6 +410,7 @@ fn process_data_block(
     seq: u32,
     data: DataV1,
     write_buffer: &mut [u8],
+    file: &mut std::fs::File,
 ) -> Result<(), SendFileError> {
     let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, data.data) as u32;
     if computed_checksum != data.checksum {
@@ -429,12 +437,7 @@ fn process_data_block(
         data.data.to_vec()
     };
 
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&state.file_path)?;
-
-    if let Err(e) = write_file_block(&mut file, seq, state.block_size, &block_data) {
+    if let Err(e) = write_file_block(file, seq, state.block_size, &block_data) {
         warn!("Failed to write block {}: {}", seq, e);
         return Err(SendFileError::Io(e));
     }
@@ -564,9 +567,14 @@ mod tests {
         };
 
         let mut write_buffer = vec![0u8; 1024];
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&file_path)
+            .unwrap();
 
         // Execute
-        let result = process_data_block(&state, 0, data, &mut write_buffer);
+        let result = process_data_block(&state, 0, data, &mut write_buffer, &mut file);
 
         // Verify
         assert!(
