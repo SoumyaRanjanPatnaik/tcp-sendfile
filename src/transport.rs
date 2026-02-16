@@ -28,49 +28,57 @@ pub struct SerializedMessage {
     pub payload: &'static [u8],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HandshakeV1<'a> {
+    /// SHA-256 hash of the file being transferred, used for integrity verification,
+    /// and deduplication on the receiver side.
+    pub file_hash: &'a [u8],
+
+    /// Total size of the file in bytes, used for progress tracking and pre-allocation
+    /// on the receiver side.
+    pub total_size: u64,
+
+    /// Number of concurrent connections for transferring the file
+    pub concurrency: u16,
+
+    /// Original file name, used for allocating the file on the receiver side and for display purposes.
+    pub file_name: &'a str,
+
+    /// Size of each data block in bytes, used for splitting the file into chunks and for progress tracking.
+    pub block_size: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataV1<'a> {
+    /// Sequence number of the chunk being sent, used for tracking which chunks have been sent and received.
+    pub seq: u32,
+    /// Checksum of the chunk data, used for integrity verification on the receiver side.
+    pub checksum: u32,
+    /// SHA-256 hash of the file this data belongs to.
+    pub file_hash: &'a [u8],
+    /// Whether the data is compressed using gzip.
+    pub compressed: bool,
+    /// Actual chunk data being sent, with length specified in the Len header of the message.
+    pub data: &'a [u8],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SenderErrorV1 {
+    pub code: u16,
+    pub message: String,
+}
+
 /// Messages sent from the Sender (the one sending the file) to the Receiver.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SenderMessageV1<'a> {
     /// Initial handshake message sent from sender to receiver to establish transfer parameters.
-    Handshake {
-        /// SHA-256 hash of the file being transferred, used for integrity verification,
-        /// and deduplication on the receiver side.
-        file_hash: &'a [u8],
-
-        /// Total size of the file in bytes, used for progress tracking and pre-allocation
-        /// on the receiver side.
-        total_size: u64,
-
-        /// Number of concurrent connections for transferring the file
-        concurrency: u16,
-
-        /// Original file name, used for allocating the file on the receiver side and for display purposes.
-        file_name: &'a str,
-
-        /// Size of each data block in bytes, used for splitting the file into chunks and for progress tracking.
-        block_size: u32,
-    },
+    Handshake(#[serde(borrow)] HandshakeV1<'a>),
 
     /// A chunk of file data being sent from sender to receiver.
-    Data {
-        /// Sequence number of the chunk being sent, used for tracking which chunks have been sent and received.
-        seq: u32,
-        /// Checksum of the chunk data, used for integrity verification on the receiver side.
-        checksum: u32,
-        /// SHA-256 hash of the file this data belongs to.
-        file_hash: &'a [u8],
-        /// Actual chunk data being sent, with length specified in the Len header of the message.
-        data: &'a [u8],
-    },
-
-    /// A request from sender to receiver to report the current progress of the transfer, including total bytes received so far.
-    ProgressRequest {
-        /// SHA-256 hash of the file being tracked.
-        file_hash: &'a [u8],
-    },
+    Data(#[serde(borrow)] DataV1<'a>),
 
     /// An error message sent from the sender to indicate a problem.
-    Error { code: u16, message: String },
+    Error(SenderErrorV1),
 }
 
 impl<'a> SenderMessageV1<'a> {
@@ -86,36 +94,51 @@ impl<'a> SenderMessageV1<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestV1 {
+    /// SHA-256 hash of the file being requested.
+    pub file_hash: [u8; 32],
+    /// Sequence number of the chunk being requested, used for tracking which chunks have been sent and received.
+    /// In case of retransmissions, the receiver may request the same chunk multiple times until it is
+    /// successfully received and verified.
+    pub seq: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProgressV1 {
+    /// SHA-256 hash of the file being tracked.
+    pub file_hash: [u8; 32],
+    pub bytes_received: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransferCompleteV1 {
+    /// SHA-256 hash of the file that was completed.
+    pub file_hash: [u8; 32],
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiverErrorV1 {
+    pub code: u16,
+    pub message: String,
+}
+
 /// Messages sent from the Receiver (the one receiving the file) to the Sender.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReceiverMessageV1 {
     /// A request from receiver to sender to send a specific chunk of the file.
-    Request {
-        /// SHA-256 hash of the file being requested.
-        file_hash: [u8; 32],
-        /// Sequence number of the chunk being requested, used for tracking which chunks have been sent and received.
-        /// In case of retransmissions, the receiver may request the same chunk multiple times until it is
-        /// successfully received and verified.
-        seq: u32,
-    },
+    Request(RequestV1),
 
     /// A response from receiver to sender with the total bytes received so far.
     /// Used for progress tracking and retransmission decisions on the sender side.
-    ProgressResponse {
-        /// SHA-256 hash of the file being tracked.
-        file_hash: [u8; 32],
-        bytes_received: u64,
-    },
+    Progress(ProgressV1),
 
     /// A signal from the receiver that the file has been successfully received and verified.
     /// This marks the completion of the transfer for this connection.
-    TransferComplete {
-        /// SHA-256 hash of the file that was completed.
-        file_hash: [u8; 32],
-    },
+    TransferComplete(TransferCompleteV1),
 
     /// An error message sent from the receiver to indicate a problem.
-    Error { code: u16, message: String },
+    Error(ReceiverErrorV1),
 }
 
 impl ReceiverMessageV1 {
@@ -163,13 +186,13 @@ mod tests {
 
     #[test]
     fn test_handshake_serde() {
-        let msg = SenderMessageV1::Handshake {
+        let msg = SenderMessageV1::Handshake(HandshakeV1 {
             file_hash: &[0xAA; 32],
             total_size: 1024 * 1024,
             concurrency: 8,
             file_name: "test_file.txt",
             block_size: MAX_BLOCK_SIZE,
-        };
+        });
 
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -180,9 +203,9 @@ mod tests {
 
     #[test]
     fn test_transfer_complete_serde() {
-        let msg = ReceiverMessageV1::TransferComplete {
+        let msg = ReceiverMessageV1::TransferComplete(TransferCompleteV1 {
             file_hash: [0xBB; 32],
-        };
+        });
         let mut buffer = [0u8; 1024];
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = ReceiverMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
@@ -193,12 +216,13 @@ mod tests {
     #[test]
     fn test_data_serde() {
         let data_payload = [1, 2, 3, 4, 5];
-        let msg = SenderMessageV1::Data {
+        let msg = SenderMessageV1::Data(DataV1 {
             seq: 10,
             checksum: 0xDEADBEEF,
             file_hash: &[0xAA; 32],
+            compressed: false,
             data: &data_payload,
-        };
+        });
 
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -209,10 +233,10 @@ mod tests {
 
     #[test]
     fn test_error_serde() {
-        let msg = SenderMessageV1::Error {
+        let msg = SenderMessageV1::Error(SenderErrorV1 {
             code: 404,
             message: "File not found".to_string(),
-        };
+        });
 
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -222,24 +246,11 @@ mod tests {
     }
 
     #[test]
-    fn test_progress_request_serde() {
-        let msg = SenderMessageV1::ProgressRequest {
-            file_hash: &[0xCC; 32],
-        };
-
-        let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
-        let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
-        let decoded = SenderMessageV1::from_bytes(&serialized).expect("Failed to deserialize");
-
-        assert_eq!(msg, decoded);
-    }
-
-    #[test]
-    fn test_progress_response_serde() {
-        let msg = ReceiverMessageV1::ProgressResponse {
+    fn test_progress_serde() {
+        let msg = ReceiverMessageV1::Progress(ProgressV1 {
             file_hash: [0xDD; 32],
             bytes_received: 512 * 1024,
-        };
+        });
         let mut buffer = [0u8; 1024]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
         let decoded = ReceiverMessageV1::from_bytes(&serialized).expect("Failed to deserialize ");
@@ -249,10 +260,10 @@ mod tests {
 
     #[test]
     fn test_request_serde() {
-        let msg = ReceiverMessageV1::Request {
+        let msg = ReceiverMessageV1::Request(RequestV1 {
             file_hash: [0xEE; 32],
             seq: 42,
-        };
+        });
         let mut buffer = [0u8; 1024]; // Large enough buffer for
                                       // serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");
@@ -264,12 +275,13 @@ mod tests {
     #[test]
     fn test_large_data_serde() {
         let data_payload = vec![0xFF; MAX_BLOCK_SIZE as usize];
-        let msg = SenderMessageV1::Data {
+        let msg = SenderMessageV1::Data(DataV1 {
             seq: 100,
             checksum: 0xBEEFDEAD,
             file_hash: &[0xFF; 32],
+            compressed: false,
             data: &data_payload,
-        };
+        });
 
         let mut buffer = vec![0u8; (MAX_BLOCK_SIZE + 512) as usize]; // Large enough buffer for serialization
         let serialized = msg.to_bytes(&mut buffer).expect("Failed to serialize");

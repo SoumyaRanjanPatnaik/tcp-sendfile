@@ -1,7 +1,7 @@
 use crate::{
     file::FileMetadata,
     stream::error::SendFileError,
-    transport::{self, SenderMessageV1},
+    transport::{self, HandshakeV1, SenderMessageV1},
 };
 use log::{debug, info};
 use std::{io::Write, net::TcpStream, path::Path};
@@ -22,13 +22,13 @@ pub fn initialize_handshake(
     info!("File size: {} bytes", file_metadata.size());
     info!("File SHA-256 hash: {:x?}", file_metadata.hash());
 
-    let handshake_message = SenderMessageV1::Handshake {
+    let handshake_message = SenderMessageV1::Handshake(HandshakeV1 {
         file_name: file_metadata.name(),
         file_hash: &file_metadata.hash(),
         total_size: file_metadata.size(),
         concurrency,
         block_size,
-    };
+    });
 
     let payload_bytes = handshake_message.to_bytes(transport_buffer)?;
     let handshake_message = transport::attach_headers(&payload_bytes);

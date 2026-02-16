@@ -7,7 +7,6 @@ use crate::transport::{
     CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE, MESSAGE_DELIMITER,
     VERSION_HEADER_PRIFIX,
 };
-use log::debug;
 use serde::Deserialize;
 
 #[derive(thiserror::Error, Debug)]
