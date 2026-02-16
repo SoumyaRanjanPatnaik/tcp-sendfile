@@ -1,44 +1,76 @@
-//! Utility functions for file handling, such as calculating the SHA-256 hash of a file.
+//! Utility functions for file handling, such as calculating the BLAKE3 hash of a file.
 use crate::transport::MAX_BLOCK_SIZE;
-use sha2::{Digest, Sha256};
-use std::cell::RefCell;
+use blake3::Hasher;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::thread;
 
-/// Calculates the SHA-256 hash of a file at the given path.
-pub fn get_file_sha256_hash(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
-    let file = File::open(file_path)?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256::new();
+const PARALLEL_CHUNK_SIZE: u64 = 8 * 1024 * 1024; // 8 MB per chunk for parallel hashing
 
-    // Use a thread-local buffer to avoid reallocating the buffer on each call
-    thread_local! {
-        static BUFFER: RefCell<Vec<u8>> = RefCell::new(vec![0u8; MAX_BLOCK_SIZE as usize]);
+/// Calculates the BLAKE3 hash of a file at the given path using parallel hashing.
+pub fn get_file_blake3_hash(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
+    let metadata = std::fs::metadata(file_path)?;
+    let file_size = metadata.len();
+
+    if file_size <= PARALLEL_CHUNK_SIZE {
+        return hash_sequential(file_path);
     }
 
+    let num_chunks = (file_size + PARALLEL_CHUNK_SIZE - 1) / PARALLEL_CHUNK_SIZE;
+    let _num_threads = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(num_chunks as usize)
+        .max(1);
+
+    let chunk_handles: Vec<_> = (0..num_chunks)
+        .map(|chunk_idx| {
+            let path = file_path.to_path_buf();
+            let start = chunk_idx * PARALLEL_CHUNK_SIZE;
+            let end = ((chunk_idx + 1) * PARALLEL_CHUNK_SIZE).min(file_size);
+
+            thread::spawn(move || {
+                let mut file = File::open(&path)?;
+                file.seek(SeekFrom::Start(start))?;
+                let chunk_size = (end - start) as usize;
+                let mut buffer = vec![0u8; chunk_size];
+                file.read_exact(&mut buffer)?;
+                let mut hasher = Hasher::new();
+                hasher.update(&buffer);
+                Ok::<_, std::io::Error>(hasher.finalize())
+            })
+        })
+        .collect();
+
+    let mut final_hasher = Hasher::new();
+    for handle in chunk_handles {
+        let chunk_hash = handle.join().unwrap()?;
+        final_hasher.update(chunk_hash.as_bytes());
+    }
+
+    let result = final_hasher.finalize();
+    let mut hash_array = [0u8; 32];
+    hash_array.copy_from_slice(result.as_bytes());
+    Ok(hash_array)
+}
+
+fn hash_sequential(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
+    let file = File::open(file_path)?;
+    let mut reader = BufReader::new(file);
+    let mut hasher = Hasher::new();
+
+    let mut buffer = vec![0u8; MAX_BLOCK_SIZE as usize];
     loop {
-        let is_eof_result = BUFFER.with(|buffer_cell| {
-            let mut buffer = buffer_cell.borrow_mut();
-            let bytes_read = reader.read(&mut buffer)?;
-
-            if bytes_read == 0 {
-                return Ok(true);
-            }
-
-            hasher.update(&buffer[..bytes_read]);
-            Ok(false)
-        });
-
-        match is_eof_result {
-            Ok(true) => break,       // EOF reached
-            Ok(false) => continue,   // Processed a chunk, continue reading
-            Err(e) => return Err(e), // Propagate any I/O errors
+        let bytes_read = reader.read(&mut buffer)?;
+        if bytes_read == 0 {
+            break;
         }
+        hasher.update(&buffer[..bytes_read]);
     }
 
     let result = hasher.finalize();
     let mut hash_array = [0u8; 32];
-    hash_array.copy_from_slice(&result);
+    hash_array.copy_from_slice(result.as_bytes());
     Ok(hash_array)
 }
 
@@ -89,28 +121,23 @@ mod tests {
     use std::{env::temp_dir, fs::OpenOptions, io::Write};
 
     #[test]
-    fn test_get_file_sha256_hash() {
-        // Create a temporary file with known content
+    fn test_get_file_blake3_hash() {
         let temp_file_path = temp_dir().join("test_file.txt");
         let mut temp_file = File::create(&temp_file_path).expect("Failed to create temp file");
 
-        // Allocate a large content to ensure multiple reads are required
         let content: Vec<u8> = vec![b'a'; 2 * MAX_BLOCK_SIZE as usize];
 
         temp_file
             .write_all(&content)
             .expect("Failed to write to temp file");
 
-        // Get the hash from the function
-        let hash = get_file_sha256_hash(&temp_file_path).expect("Failed to get file hash");
+        let hash = get_file_blake3_hash(&temp_file_path).expect("Failed to get file hash");
 
-        // Calculate the expected hash using the same content
-        let mut hasher = Sha256::new();
-        hasher.update(content);
-        let expected_hash = hasher.finalize();
+        let mut hasher = Hasher::new();
+        hasher.update(&content);
+        let expected_hash: [u8; 32] = hasher.finalize().into();
 
-        // Assert that the calculated hash matches the expected hash
-        assert_eq!(hash, expected_hash.as_slice());
+        assert_eq!(hash, expected_hash);
     }
 
     #[test]

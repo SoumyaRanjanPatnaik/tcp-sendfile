@@ -1,3 +1,5 @@
+use log::debug;
+
 pub mod utils;
 
 #[derive(Debug)]
@@ -6,7 +8,7 @@ pub struct FileMetadata {
     name: String,
     /// Size of the file in bytes
     size: u64,
-    /// SHA-256 hash of the file content
+    /// BLAKE3 hash of the file content
     hash: [u8; 32],
 }
 
@@ -25,9 +27,13 @@ impl FileMetadata {
             .and_then(|name| name.to_str())
             .unwrap_or("unnamed_file")
             .to_string();
+        debug!("Calculating metadata for file: {:?}", path);
 
         let filesize = std::fs::metadata(path)?.len();
-        let filehash = utils::get_file_sha256_hash(path)?;
+        debug!("File size: {} bytes", filesize);
+
+        let filehash = utils::get_file_blake3_hash(path)?;
+        debug!("File hash (BLAKE3): {:x?}", filehash);
 
         Ok(Self {
             name: filename,
@@ -52,7 +58,7 @@ impl FileMetadata {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sha2::{Digest, Sha256};
+    use blake3::Hasher;
     use std::{env::temp_dir, fs::File, io::Write};
 
     #[test]
@@ -72,7 +78,7 @@ mod tests {
         let metadata =
             FileMetadata::from_file(&temp_file_path).expect("Failed to create FileMetadata");
 
-        let mut hasher = Sha256::new();
+        let mut hasher = Hasher::new();
         hasher.update(content);
         let expected_hash = hasher.finalize();
 

@@ -30,7 +30,7 @@ pub struct SerializedMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HandshakeV1<'a> {
-    /// SHA-256 hash of the file being transferred, used for integrity verification,
+    /// BLAKE3 hash of the file being transferred, used for integrity verification,
     /// and deduplication on the receiver side.
     pub file_hash: &'a [u8],
 
@@ -54,7 +54,7 @@ pub struct DataV1<'a> {
     pub seq: u32,
     /// Checksum of the chunk data, used for integrity verification on the receiver side.
     pub checksum: u32,
-    /// SHA-256 hash of the file this data belongs to.
+    /// BLAKE3 hash of the file this data belongs to.
     pub file_hash: &'a [u8],
     /// Whether the data is compressed using gzip.
     pub compressed: bool,
@@ -99,7 +99,7 @@ impl<'a> SenderMessageV1<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestV1 {
-    /// SHA-256 hash of the file being requested.
+    /// BLAKE3 hash of the file being requested.
     pub file_hash: [u8; 32],
     /// Sequence number of the chunk being requested, used for tracking which chunks have been sent and received.
     /// In case of retransmissions, the receiver may request the same chunk multiple times until it is
@@ -109,14 +109,14 @@ pub struct RequestV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProgressV1 {
-    /// SHA-256 hash of the file being tracked.
+    /// BLAKE3 hash of the file being tracked.
     pub file_hash: [u8; 32],
     pub bytes_received: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransferCompleteV1 {
-    /// SHA-256 hash of the file that was completed.
+    /// BLAKE3 hash of the file that was completed.
     pub file_hash: [u8; 32],
 }
 

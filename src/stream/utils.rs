@@ -20,7 +20,7 @@ pub fn initialize_handshake(
     let file_metadata = FileMetadata::from_file(file_path)?;
     info!("File name: {}", file_metadata.name());
     info!("File size: {} bytes", file_metadata.size());
-    info!("File SHA-256 hash: {:x?}", file_metadata.hash());
+    info!("File BLAKE3 hash: {:x?}", file_metadata.hash());
 
     let handshake_message = SenderMessageV1::Handshake(HandshakeV1 {
         file_name: file_metadata.name(),

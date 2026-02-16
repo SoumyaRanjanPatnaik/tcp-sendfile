@@ -1,6 +1,6 @@
 use crate::stream::send::ConnectionHandler;
 use crate::transport::{ProgressV1, RequestV1, SenderMessageV1, TransferCompleteV1};
-use sha2::{Digest, Sha256};
+use blake3::Hasher;
 use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::PathBuf;
@@ -23,7 +23,7 @@ fn create_temp_file(content: &[u8]) -> (File, PathBuf) {
 }
 
 fn calculate_hash(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
+    let mut hasher = Hasher::new();
     hasher.update(data);
     hasher.finalize().into()
 }

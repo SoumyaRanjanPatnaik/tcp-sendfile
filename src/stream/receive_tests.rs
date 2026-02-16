@@ -1,13 +1,13 @@
 use crate::stream::error::SendFileError;
 use crate::transport::{ReceiverMessageV1, RequestV1, TransferCompleteV1};
+use blake3::Hasher;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use sha2::{Digest, Sha256};
 use std::io::Write;
 use std::path::PathBuf;
 
 fn calculate_hash(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
+    let mut hasher = Hasher::new();
     hasher.update(data);
     hasher.finalize().into()
 }
