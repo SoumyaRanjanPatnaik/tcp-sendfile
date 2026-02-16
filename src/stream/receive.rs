@@ -190,7 +190,10 @@ fn run_connection(
     if is_transfer_complete(&state) {
         send_transfer_complete(&mut stream, &state)?;
     } else {
-        error!("Connection closed unexpectedly");
+        info!(
+            "Range {}-{} complete, but transfer not fully complete yet",
+            range_start, range_end
+        );
     }
 
     Ok(())
