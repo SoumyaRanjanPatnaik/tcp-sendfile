@@ -445,6 +445,12 @@ fn process_data_block(
     write_buffer: &mut [u8],
     file: &mut std::fs::File,
 ) -> Result<(), SendFileError> {
+    if seq != data.seq {
+        return Err(SendFileError::BlockSequenceMismatch {
+            expected: seq,
+            received: data.seq,
+        });
+    }
     let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, data.data) as u32;
     if computed_checksum != data.checksum {
         warn!(

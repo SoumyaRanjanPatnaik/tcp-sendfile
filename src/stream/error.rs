@@ -26,6 +26,9 @@ pub enum SendFileError {
         expected: [u8; 32],
         received: Vec<u8>,
     },
+
+    #[error("Block sequence mismatch: expected block {expected}, got block {received}")]
+    BlockSequenceMismatch { expected: u32, received: u32 },
     /// Checksum mismatch for a data block.
     #[error("Checksum mismatch for block {seq}: expected {expected}, got {computed}")]
     ChecksumMismatch {
