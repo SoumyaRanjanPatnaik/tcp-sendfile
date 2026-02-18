@@ -29,13 +29,16 @@ fn main() {
             let address = (args.host.as_str(), HANDSHAKE_PORT);
             let block_size = args.block_size.unwrap_or(1024 * 1024).min(MAX_BLOCK_SIZE); // Default 1MB
             let no_compress = args.no_compress;
+            let concurrency = get_concurrency(args.concurrency);
 
             info!(
                 "Sending file {:?} to {}:{} (block_size: {})",
                 args.file, address.0, address.1, block_size
             );
 
-            if let Err(e) = stream::send::send_file(address, &args.file, block_size, !no_compress) {
+            if let Err(e) =
+                stream::send::send_file(address, &args.file, block_size, !no_compress, concurrency)
+            {
                 error!("Failed to send file: {}", e);
                 std::process::exit(1);
             }
