@@ -171,6 +171,15 @@ fn parse_all_headers(header_buffer: &[u8]) -> Result<(u8, usize), StreamReadErro
         .map(|line| line.trim_ascii())
         .collect();
 
+    if header_lines.len() < 2 {
+        return Err(StreamReadError::InvalidMessageFormat {
+            details: format!(
+                "Expected at least 2 header lines (version and length), found {}",
+                header_lines.len()
+            ),
+        });
+    }
+
     // First header should be the version header, second should be the length header
     let version = parse_header_line::<u8>(header_lines[0], VERSION_HEADER_PRIFIX.len())?;
     let length = parse_header_line::<usize>(header_lines[1], LENGTH_HEADER_PREFIX.len())?;
