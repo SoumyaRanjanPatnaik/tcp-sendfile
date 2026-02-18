@@ -8,6 +8,10 @@ pub enum SendFileError {
     /// An I/O error occurred.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("File metadata error: {0}")]
+    FileMetadata(#[from] crate::file::error::GetFileMetadataError),
+
     /// A transport layer error occurred (serialization/deserialization).
     #[error("Transport error: {0}")]
     Transport(#[from] TransportError),

@@ -1,5 +1,8 @@
 use log::debug;
 
+use crate::file::error::GetFileMetadataError;
+
+pub mod error;
 pub mod utils;
 
 #[derive(Debug)]
@@ -33,7 +36,7 @@ impl FileMetadata {
     /// # Returns
     ///
     /// A `Result` containing the `FileMetadata` or an `io::Error`.
-    pub fn from_file(path: &std::path::Path) -> std::io::Result<Self> {
+    pub fn from_file(path: &std::path::Path) -> Result<Self, GetFileMetadataError> {
         let filename = path
             .file_name()
             .and_then(|name| name.to_str())

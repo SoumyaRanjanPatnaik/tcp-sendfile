@@ -1,4 +1,5 @@
 //! Utility functions for file handling, such as calculating the BLAKE3 hash of a file.
+use crate::file::error::FileHashError;
 use crate::transport::MAX_BLOCK_SIZE;
 use blake3::Hasher;
 use std::fs::File;
@@ -8,12 +9,12 @@ use std::thread;
 const PARALLEL_CHUNK_SIZE: u64 = 8 * 1024 * 1024; // 8 MB per chunk for parallel hashing
 
 /// Calculates the BLAKE3 hash of a file at the given path using parallel hashing.
-pub fn get_file_blake3_hash(file_path: &std::path::Path) -> Result<[u8; 32], std::io::Error> {
+pub fn get_file_blake3_hash(file_path: &std::path::Path) -> Result<[u8; 32], FileHashError> {
     let metadata = std::fs::metadata(file_path)?;
     let file_size = metadata.len();
 
     if file_size <= PARALLEL_CHUNK_SIZE {
-        return hash_sequential(file_path);
+        return Ok(hash_sequential(file_path)?);
     }
 
     let num_chunks = file_size.div_ceil(PARALLEL_CHUNK_SIZE);
@@ -43,8 +44,17 @@ pub fn get_file_blake3_hash(file_path: &std::path::Path) -> Result<[u8; 32], std
         .collect();
 
     let mut final_hasher = Hasher::new();
-    for handle in chunk_handles {
-        let chunk_hash = handle.join().unwrap()?;
+    for (chunk_index, handle) in chunk_handles.into_iter().enumerate() {
+        let chunk_hash = match handle.join() {
+            Err(_) => return Err(FileHashError::ThreadJoinError { chunk_index }),
+            Ok(Err(e)) => {
+                return Err(FileHashError::ChunkHashError {
+                    chunk_index,
+                    source: e,
+                })
+            }
+            Ok(Ok(hash)) => hash,
+        };
         final_hasher.update(chunk_hash.as_bytes());
     }
 
