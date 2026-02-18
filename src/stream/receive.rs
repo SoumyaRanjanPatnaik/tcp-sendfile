@@ -329,7 +329,6 @@ fn download_missing_blocks(
     range_start: u32,
     range_end: u32,
 ) -> Result<(), SendFileError> {
-    let mut current_seq = range_start;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut file = OpenOptions::new()
@@ -355,8 +354,7 @@ fn download_missing_blocks(
                 &mut file,
             ) {
                 Ok(()) => {
-                    state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
-                    current_seq += 1;
+                    state.received_blocks[seq as usize].store(true, Ordering::SeqCst);
                     break;
                 }
                 Err(e) => {
@@ -364,11 +362,11 @@ fn download_missing_blocks(
                     if retry_count >= MAX_RETRIES {
                         error!(
                             "Max retries ({}) exceeded for block {}: {}",
-                            MAX_RETRIES, current_seq, e
+                            MAX_RETRIES, seq, e
                         );
                         return Err(SendFileError::Io(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
-                            format!("Max retries exceeded for block {}", current_seq),
+                            format!("Max retries exceeded for block {}", seq),
                         )));
                     }
 
