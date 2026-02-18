@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::transport::{
-    CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_MESSAGE_SIZE, MESSAGE_DELIMITER,
-    VERSION_HEADER_PRIFIX,
+    CURRENT_PROTOCOL_VERSION, LENGTH_HEADER_PREFIX, MAX_HEADER_SIZE, MAX_MESSAGE_SIZE,
+    MESSAGE_DELIMITER, VERSION_HEADER_PRIFIX,
 };
 use serde::Deserialize;
 
@@ -90,6 +90,15 @@ where
         if total_bytes_read == buffer.len() {
             return Err(StreamReadError::BufferSmallerThanExpected {
                 min_expected: MAX_MESSAGE_SIZE,
+            });
+        }
+
+        if total_bytes_read > MAX_HEADER_SIZE {
+            return Err(StreamReadError::InvalidMessageFormat {
+                details: format!(
+                    "Header exceeds maximum allowed size of {} bytes",
+                    MAX_HEADER_SIZE
+                ),
             });
         }
 
