@@ -329,7 +329,6 @@ fn download_missing_blocks(
     range_start: u32,
     range_end: u32,
 ) -> Result<(), SendFileError> {
-    let mut current_seq = range_start;
     let mut buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut write_buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let mut file = OpenOptions::new()
@@ -355,8 +354,7 @@ fn download_missing_blocks(
                 &mut file,
             ) {
                 Ok(()) => {
-                    state.received_blocks[current_seq as usize].store(true, Ordering::SeqCst);
-                    current_seq += 1;
+                    state.received_blocks[seq as usize].store(true, Ordering::SeqCst);
                     break;
                 }
                 Err(e) => {
@@ -364,11 +362,11 @@ fn download_missing_blocks(
                     if retry_count >= MAX_RETRIES {
                         error!(
                             "Max retries ({}) exceeded for block {}: {}",
-                            MAX_RETRIES, current_seq, e
+                            MAX_RETRIES, seq, e
                         );
                         return Err(SendFileError::Io(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
-                            format!("Max retries exceeded for block {}", current_seq),
+                            format!("Max retries exceeded for block {}", seq),
                         )));
                     }
 
@@ -445,6 +443,12 @@ fn process_data_block(
     write_buffer: &mut [u8],
     file: &mut std::fs::File,
 ) -> Result<(), SendFileError> {
+    if seq != data.seq {
+        return Err(SendFileError::BlockSequenceMismatch {
+            expected: seq,
+            received: data.seq,
+        });
+    }
     let computed_checksum = checksum(CrcAlgorithm::Crc32IsoHdlc, data.data) as u32;
     if computed_checksum != data.checksum {
         warn!(
