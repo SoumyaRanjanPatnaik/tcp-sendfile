@@ -48,7 +48,7 @@ const INITIAL_RETRY_DELAY_MS: u64 = 500;
 pub fn receive_file(
     bind_addr: (&str, u16),
     path: &std::path::Path,
-    concurrency: u16,
+    mut concurrency: u16,
 ) -> Result<(), SendFileError> {
     info!(
         "Listening on {}:{} with concurrency {}",
@@ -85,6 +85,9 @@ pub fn receive_file(
 
     let final_path = determine_final_path(path, handshake.file_name);
     info!("Output file path: {:?}", final_path);
+
+    // Use the minimum of sender's and receiver's concurrency to avoid overwhelming the sender
+    concurrency = concurrency.min(handshake.concurrency);
 
     let total_blocks = handshake.total_size.div_ceil(handshake.block_size as u64) as u32;
 
