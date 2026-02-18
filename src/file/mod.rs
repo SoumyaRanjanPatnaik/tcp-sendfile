@@ -74,12 +74,12 @@ impl FileMetadata {
 mod tests {
     use super::*;
     use blake3::Hasher;
-    use std::{env::temp_dir, fs::File, io::Write};
+    use std::{env::temp_dir, fs::File, io::Write, thread};
 
     #[test]
     fn test_file_metadata_from_file() {
         // Create a temporary file with known content
-        let temp_file_path = temp_dir().join("test_file.txt");
+        let temp_file_path = temp_dir().join("file_metadata_test.txt");
         let mut temp_file = File::create(&temp_file_path).expect("Failed to create temp file");
 
         let content = b"Hello, world!";
@@ -88,6 +88,8 @@ mod tests {
             .expect("Failed to write to temp file");
 
         temp_file.flush().expect("Failed to flush temp file"); // Ensure all data is written to disk
+
+        thread::sleep(std::time::Duration::from_millis(100)); // Small delay to ensure file system updates
 
         // Create FileMetadata from the file
         let metadata =
@@ -98,8 +100,16 @@ mod tests {
         let expected_hash = hasher.finalize();
 
         // Verify the metadata
-        assert_eq!(metadata.name(), "test_file.txt");
-        assert_eq!(metadata.size(), content.len() as u64);
-        assert_eq!(metadata.hash(), expected_hash.as_slice(),);
+        assert_eq!(
+            metadata.name(),
+            "file_metadata_test.txt",
+            "File name mismatch"
+        );
+        assert_eq!(metadata.size(), content.len() as u64, "File size mismatch");
+        assert_eq!(
+            metadata.hash(),
+            expected_hash.as_slice(),
+            "File hash mismatch"
+        );
     }
 }
