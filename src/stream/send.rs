@@ -32,19 +32,15 @@ pub fn send_file(
     file_path: &Path,
     block_size: u32,
     should_compress: bool,
+    concurrency: u16,
 ) -> Result<(), SendFileError> {
-    let available_parallelism = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1);
-    let cap = (available_parallelism * 4).max(8).min(u16::MAX as usize); // Ensure at least 8 connections, max u16
-
     let mut transport_buffer = vec![0u8; MAX_MESSAGE_SIZE];
     let file_hash = initialize_handshake(
         &mut transport_buffer,
         address,
         file_path,
         block_size,
-        cap as u16,
+        concurrency,
     )
     .expect("Failed to initialize handshake");
 
@@ -78,7 +74,7 @@ pub fn send_file(
         match listener.accept() {
             Ok((stream, addr)) => {
                 info!("Accepted connection from {}", addr);
-                if active_connections.load(Ordering::Relaxed) >= cap {
+                if active_connections.load(Ordering::Relaxed) >= concurrency as usize {
                     warn!("Max connections reached, dropping incoming connection");
                     continue;
                 }
