@@ -24,6 +24,28 @@ pub const MESSAGE_DELIMITER_STR: &str = "\r\n";
 /// The byte slice delimiter for messages (CRLF).
 pub const MESSAGE_DELIMITER: &[u8] = MESSAGE_DELIMITER_STR.as_bytes();
 
+/// Sum of the sizes of:
+/// - Prefix: [VERSION_HEADER_PREFIX_STR]
+/// - Version number: 1 byte (CURRENT_PROTOCOL_VERSION)
+/// - Delimiter: [MESSAGE_DELIMITER_STR]
+pub const VERSION_HEADER_SIZE: usize = VERSION_HEADER_PRIFIX.len() + 1 + MESSAGE_DELIMITER.len();
+
+/// Sum of the sizes of:
+/// - Prefix: [LENGTH_HEADER_PREFIX_STR]
+/// - Length Value: Bound by [MAX_MESSAGE_SIZE], which can be up to 10 digits (for 4 MB, it's 7 digits, but we allow up to 10 for future-proofing)
+/// - Delimiter: [MESSAGE_DELIMITER_STR]
+pub const LENGTH_HEADER_SIZE: usize = LENGTH_HEADER_PREFIX.len() + 10 + MESSAGE_DELIMITER.len();
+
+/// The maximum allowed header size.
+///
+/// Sum of the sizes of:
+/// - Version Header: [VERSION_HEADER_SIZE]
+/// - Length Header: [LENGTH_HEADER_SIZE]
+/// - Additional delimiter between headers and payload: [MESSAGE_DELIMITER_STR]
+/// - Additional Buffer: 64 bytes (to allow for any future headers or metadata without exceeding the limit)
+pub const MAX_HEADER_SIZE: usize =
+    VERSION_HEADER_SIZE + LENGTH_HEADER_SIZE + MESSAGE_DELIMITER.len() + 64;
+
 /// Errors that can occur in the transport layer.
 #[derive(Error, Debug)]
 pub enum TransportError {
