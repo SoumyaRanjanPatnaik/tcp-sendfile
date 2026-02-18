@@ -40,7 +40,11 @@ pub enum SendFileError {
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
 
-    #[error("Integrity check failed. Expected hash: {expected}, received hash: {received}")]
+    #[error(
+        "Integrity check failed. Expected hash: {:?}, received hash: {:?}",
+        expected,
+        received
+    )]
     IntegrityCheckFailed {
         expected: [u8; 32],
         received: [u8; 32],
